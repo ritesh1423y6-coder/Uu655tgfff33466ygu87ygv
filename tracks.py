@@ -48,7 +48,7 @@ REQUIRED_USERNAME_TAG = "@redcube"
 FSUB_CHANNEL = "@redcube_en"  
 GROUP_INVITE_LINK = "https://t.me/+rdKCTKOlxUE1Mjc8"
 BANNED_PROMOS = ["@raika", "@dices", "@booplay", "@axoms", "casino"]
-CASINO_NAME = "Redcube Casino"
+CASINO_NAME = "@Redcube"
 
 # ================= HTTP SESSION & GAME STATE =================
 HTTP_SESSION: aiohttp.ClientSession | None = None
