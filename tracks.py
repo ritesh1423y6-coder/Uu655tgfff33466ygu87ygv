@@ -207,10 +207,10 @@ async def answer_cb(cb_id: str, text: str = None, show_alert: bool = False):
     except Exception: pass
 
 # ================= INITIALIZATION =================
-app = Client("my_advanc98768e6d_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("my_advanc9768e6d_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 client = AsyncIOMotorClient(MONGO_URI, maxPoolSize=50)
-db = client['Advanced656BotDB']
+db = client['Advanced56BotDB']
 users_db = db['users']
 admins_db = db['admins']
 config_db = db['config']
