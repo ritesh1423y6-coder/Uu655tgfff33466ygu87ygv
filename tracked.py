@@ -41,10 +41,10 @@ ACTIVE_HELPER_TOKENS = [t.strip() for t in [HELPER_BOT_TOKEN_1, HELPER_BOT_TOKEN
 API_ID = 35831190  
 API_HASH = "f625657330797a7f149855cbdfcf9dae"
 MONGO_URI = "mongodb+srv://Cricket_231:Rohit1616%40@zolmdho.mongodb.net/?appName=Cluster0" 
-OWNER_ID = 7691071175 
+OWNER_ID = 7691071175  
 TRACK_GROUP_ID = -1003946482336  
 REQUIRED_USERNAME_TAG = "@redcube"
-FSUB_CHANNEL = "@redcube_en"    
+FSUB_CHANNEL = "@redcube_en"     
 GROUP_INVITE_LINK = "https://t.me/+KyPLj7jfAGExNGVk"
 WIN_LOG_CHANNEL_ID = -1003954075033
 BANNED_PROMOS = ["@raika", "@dices", "@booplay", "@axoms", "casino"]
@@ -141,13 +141,9 @@ async def get_session() -> aiohttp.ClientSession:
         HTTP_SESSION = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return HTTP_SESSION
 
-# 👇 YAHAN SE CHANGE KARNA HAI 👇
-
-# Ek gatekeeper banao jo ek sath sirf 20 request allow karega
 api_semaphore = asyncio.Semaphore(20)
 
 async def tg(method: str, use_helper: bool = False, retries: int = 2, **params):
-    # Ab pura request is api_semaphore ke andar chalega
     async with api_semaphore:
         clean = {k: v for k, v in params.items() if v is not None}
         tok = BOT_TOKEN
@@ -163,7 +159,6 @@ async def tg(method: str, use_helper: bool = False, retries: int = 2, **params):
                     res = await r.json()
                 if res.get("ok"): return res["result"]
                 
-                # Agar Telegram rate limit lagaye, toh thoda ruko aur wapas try karo
                 retry_after = res.get("parameters", {}).get("retry_after")
                 if retry_after and attempt < retries:
                     await asyncio.sleep(min(float(retry_after), 5.0))
@@ -243,7 +238,7 @@ rain_db = db['rain_events']
 games_db = db['games']
 
 user_states = {}
-active_tickets = {}   
+active_tickets = {}    
 pending_tickets = {}  
 user_langs = {}  
 
@@ -436,7 +431,7 @@ async def get_or_create_user(user_id, user_obj=None):
             "verified": False, "affiliates": [], "fake_affiliates": [], "left_affiliates": [],
             "lang": "en", "won_draw": False, "name": name,
             "ever_joined_group": False, "wagered": 0.0, "coin_wagered": 0.0, "coin_won": 0.0,
-            "daily_coin_wagered": 0.0, "last_wager_date": "",
+            "daily_coin_wagered": 0.0, "weekly_coin_wagered": 0.0, "last_wager_date": "",
             "total_deposited": 0.0, "total_withdrawn": 0.0, "last_bonus_claim": 0
         }
         await users_db.insert_one(user)
@@ -479,9 +474,10 @@ async def update_coin_stats(uid: int, stake: float, won_profit: float = 0.0):
     }
     
     if u.get("last_wager_date") != today:
-        updates["$set"] = {"last_wager_date": today, "daily_coin_wagered": stake}
+        updates["$set"] = {"last_wager_date": today, "daily_coin_wagered": stake, "weekly_coin_wagered": stake}
     else:
         updates["$inc"]["daily_coin_wagered"] = stake
+        updates["$inc"]["weekly_coin_wagered"] = stake
         
     await users_db.update_one({"user_id": uid}, updates)
 
@@ -634,7 +630,6 @@ def fix_dice_value(game: str, val: int) -> int:
     if game in ["basket", "bask"]: return 1 if val <= 3 else 5
     elif game == "football": return 1 if val <= 2 else 5
     return val
-# ===============================================================
 
 async def send_emoji_roll(chat_id: int, game: str, n: int, reply_to: int = None, is_bot: bool = False) -> list[int]:
     values = []
@@ -655,11 +650,10 @@ async def send_emoji_roll(chat_id: int, game: str, n: int, reply_to: int = None,
         if res: 
             raw_val = res["dice"]["value"]
             actual_val = fix_dice_value(game, raw_val)
-            # Backend score perfectly matches the Telegram visual output
             values.append(actual_val)
             
-        if i < n - 1: await asyncio.sleep(0.12)
-    await asyncio.sleep(2.0)
+        if i < n - 1: await asyncio.sleep(0.08)
+    await asyncio.sleep(1.2)
     return values
 
 # ================= GAME UI HELPERS =================
@@ -814,8 +808,8 @@ async def finish_match(sess: dict, payout_a: float, payout_b: float = 0.0, cashe
 
     end_text = f"{pe('🌊')} <b>The game has ended</b>\n\n{w_line}\n{l_line}\n<b>Winnings — {usd(win_amt)}</b> {pe('🪙')}"
     end_kb = kb([("Repeat", f"opp:{game}:{stake}:{mode}:{target}:{who_tag}", "primary", "🔄"),
-                 ("x2 Double", f"opp:{game}:{stake * 2}:{mode}:{target}:{who_tag}", "success", "🪙")],
-                [("Change mode", f"back_mode:{game}:{stake}", "danger", "❌")])
+                  ("x2 Double", f"opp:{game}:{stake * 2}:{mode}:{target}:{who_tag}", "success", "🪙")],
+                 [("Change mode", f"back_mode:{game}:{stake}", "danger", "❌")])
     
     if sess.get("prompt_msg_id"):
         await clear_buttons(chat_id, sess["prompt_msg_id"])
@@ -950,11 +944,14 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
         except Exception: pass
 
 # ================= BACKGROUND TIMERS =================
-async def daily_race_rewarder():
+async def weekly_race_rewarder():
     while True:
         now = datetime.datetime.now()
-        next_midnight = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        sleep_seconds = (next_midnight - now).total_seconds()
+        days_until_monday = (7 - now.weekday()) % 7
+        if days_until_monday == 0 and (now.hour > 0 or now.minute > 0 or now.second > 0):
+            days_until_monday = 7
+        next_monday = (now + datetime.timedelta(days=days_until_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+        sleep_seconds = (next_monday - now).total_seconds()
         
         await asyncio.sleep(sleep_seconds)
         
@@ -962,33 +959,39 @@ async def daily_race_rewarder():
         if not conf.get("race_enabled", False):
             continue
             
-        today = str(datetime.date.today() - datetime.timedelta(days=1)) 
         pipeline = [
-            {"$match": {"last_wager_date": today, "daily_coin_wagered": {"$gt": 0}}},
-            {"$sort": {"daily_coin_wagered": -1}},
-            {"$limit": 3} 
+            {"$match": {"weekly_coin_wagered": {"$gt": 0}}},
+            {"$sort": {"weekly_coin_wagered": -1}},
+            {"$limit": 5} 
         ]
-        winners = await users_db.aggregate(pipeline).to_list(length=3)
+        winners = await users_db.aggregate(pipeline).to_list(length=5)
         
         if winners:
             rewards = [25.0, 15.0, 10.0] 
-            log_text = f"{pe('🏆')} <b>RACE ENDED! Rewards Distributed!</b>\n\n"
+            log_text = f"{pe('🏆')} <b>WEEKLY COIN RACE ENDED! Rewards Distributed!</b>\n\n"
             
             for i, winner in enumerate(winners):
                 uid = winner["user_id"]
-                reward = rewards[i]
+                if i < len(rewards):
+                    reward = rewards[i]
+                else:
+                    reward = 0.0
                 safe_name = html.escape(winner.get("name", "Player"))
                 
-                await users_db.update_one({"user_id": uid}, {"$inc": {"balance": reward}})
-                log_text += f"<b>{i+1}.</b> {safe_name} - Won {usd(reward)}\n"
-                
-                try: 
-                    await send_msg(uid, f"{pe('🎉')} <b>Congratulations!</b> You placed #{i+1} in yesterday's Coin Race and won {usd(reward)} real balance!")
-                except: pass
-                
+                if reward > 0:
+                    await users_db.update_one({"user_id": uid}, {"$inc": {"balance": reward}})
+                    log_text += f"<b>{i+1}.</b> {safe_name} - Won {usd(reward)}\n"
+                    try: 
+                        await send_msg(uid, f"{pe('🎉')} <b>Congratulations!</b> You placed #{i+1} in last week's Coin Race and won {usd(reward)} real balance!")
+                    except: pass
+                else:
+                    log_text += f"<b>{i+1}.</b> {safe_name}\n"
+                    
             try:
                 await send_msg(TRACK_GROUP_ID, log_text, disable_web_page_preview=True)
             except: pass
+            
+        await users_db.update_many({}, {"$set": {"weekly_coin_wagered": 0.0}})
 
 async def rain_timer_task(chat_id, message_id, event_id, end_time, total_amt, win_count, min_msgs, min_turnover):
     while True:
@@ -1098,9 +1101,8 @@ async def sweeper():
         await asyncio.sleep(10)
         now = time.time()
         
-        # Har game ko ek-ek karke check karenge
         for gid, sess in list(matches.items()):
-            try:  # Try ko for-loop ke andar laaya gaya hai!
+            try: 
                 if sess.get("status") == "waiting" and now - sess.get("created_at", now) >= 120:
                     matches.pop(gid, None)
                     ua = sess["ua"]
@@ -1133,8 +1135,6 @@ async def sweeper():
                         pass
                         
             except Exception as e:
-                # Agar kisi ek game me error aaya, toh loop nahi tootega. 
-                # Bot bas error print karega aur next game check karega.
                 print(f"Sweeper Error on Game ID {gid}: {e}")
 
 # ================= MESSAGES & COMMANDS HANDLERS =================
@@ -1511,24 +1511,23 @@ async def race_cmd(client: Client, message: Message):
     if not race_on:
         return 
 
-    today = str(datetime.date.today())
     pipeline = [
-        {"$match": {"last_wager_date": today, "daily_coin_wagered": {"$gt": 0}}},
-        {"$sort": {"daily_coin_wagered": -1}},
+        {"$match": {"weekly_coin_wagered": {"$gt": 0}}},
+        {"$sort": {"weekly_coin_wagered": -1}},
         {"$limit": 5}
     ]
     results = await users_db.aggregate(pipeline).to_list(length=5)
     
-    text = f"{pe('🏆')} <b>DAILY COIN RACE!</b>\n\n" \
-           f"<i>The top 3 daily coin Wagered will share a total prize pool of <b>$50</b>!</i>\n\n" \
-           f"{pe('📈')} <b>Top 5 Wageres Today:</b>\n"
+    text = f"{pe('🏆')} <b>WEEKLY COIN RACE!</b>\n\n" \
+           f"<i>The top 3 weekly coin Wagered will share a total prize pool of <b>$50</b>!</i>\n\n" \
+           f"{pe('📈')} <b>Top 5 Wageres This Week:</b>\n"
            
     if not results:
-        text += "<i>No activity yet today. Be the first!</i>"
+        text += "<i>No activity yet this week. Be the first!</i>"
     else:
         for i, res in enumerate(results, start=1):
             name = await fetch_real_name(res['user_id'], res.get('name'))
-            score = round(res.get('daily_coin_wagered', 0))
+            score = round(res.get('weekly_coin_wagered', 0))
             text += f"<b>{i}.</b> {html.escape(name)} - {score:,} Coins\n"
             
     await send_msg(chat_id, text, disable_web_page_preview=True, reply_to=message.id)
@@ -1562,12 +1561,14 @@ async def report_cmd(client: Client, message: Message):
         
         today_str = str(datetime.date.today())
         daily_wager = float(u_doc.get("daily_coin_wagered", 0.0)) if u_doc.get("last_wager_date") == today_str else 0.0
+        weekly_wager = float(u_doc.get("weekly_coin_wagered", 0.0))
         
         text = (
             f"{pe('📊')} <b>Full Report for <a href='tg://user?id={target_id}'>{safe_name}</a> (<code>{target_id}</code>)</b>:\n\n"
             f"{pe('🪙')} <b>Coin Balance:</b> {usd(u_doc.get('coin_balance', 0.0))}\n"
             f"{pe('💵')} <b>Real Balance:</b> {usd(u_doc.get('balance', 0.0))}\n"
             f"{pe('📈')} <b>Coins Wagered (Total):</b> {usd(u_doc.get('coin_wagered', 0.0))}\n"
+            f"{pe('📈')} <b>Coins Wagered (Weekly):</b> {usd(weekly_wager)}\n"
             f"{pe('📈')} <b>Coins Wagered (Today):</b> {usd(daily_wager)}\n"
             f"{pe('🏆')} <b>Coins Won:</b> {usd(u_doc.get('coin_won', 0.0))}\n"
             f"{pe('📤')} <b>Real Withdrawn:</b> {usd(u_doc.get('total_withdrawn', 0.0))}\n"
@@ -1665,7 +1666,7 @@ async def on_dice_received(client: Client, message: Message):
     if sess.get("turn_uid") != uid: return
 
     now = time.time()
-    if now - user_last_dice_time.get(uid, 0) < 1.0: return
+    if now - user_last_dice_time.get(uid, 0) < 0.6: return
     user_last_dice_time[uid] = now
 
     raw_val = message.dice.value
@@ -1699,8 +1700,7 @@ async def on_dice_received(client: Client, message: Message):
             sess["prompt_msg_id"] = sent["message_id"] if sent else 0
             return
             
-    # Outside lock, wait for animation
-    await asyncio.sleep(2.0)
+    await asyncio.sleep(1.2)
     
     async with sess["lock"]:
         if sess["type"] == "bot":
@@ -1892,7 +1892,7 @@ async def adminhelp_cmd(client: Client, message: Message):
         "🔸 `/check [username/id]` - Check specific user's activity\n"
         "🔸 `/report [username/id]` - Full user report (coins, balances, etc)\n"
         "🔸 `/affiliatecheck [username/id]` - Check user affiliate details\n"
-        "🔸 `/race on` / `/race off` - Turn daily coin race on/off\n"
+        "🔸 `/race on` / `/race off` - Turn weekly coin race on/off\n"
         "🔸 `/rain [wins] [amt] [msgs] [min_coin_wager] [time]` - Start group rain\n"
         "🔸 `/access` (in a group) - Authorize group for Leaderboard & Games\n"
         "🔸 `/revoke` (in a group) - Remove group authorization\n"
@@ -2574,9 +2574,12 @@ async def cb_router(client: Client, call: CallbackQuery):
         
         await users_db.update_one({"user_id": uid}, {"$inc": {"coin_balance": -bet}})
         mines_pos = random.sample(range(25), mines)
+        
+        # Safe thread lock for each user's mines session
         mines_sessions[uid] = {
             "bet": bet, "mines": mines, "mines_pos": mines_pos, 
-            "opened": [], "chat_id": chat_id, "msg_id": msg_id
+            "opened": [], "chat_id": chat_id, "msg_id": msg_id,
+            "lock": asyncio.Lock()
         }
         
         txt = f"{pe('💲')} Bet: {usd(bet)}\n{pe('💣')} Mines: {mines}\n{pe('💎')} Crystals opened: 0\n\n{pe('🏆')} Win: {usd(bet)}"
@@ -2589,38 +2592,39 @@ async def cb_router(client: Client, call: CallbackQuery):
         if not sess or sess["chat_id"] != chat_id or sess["msg_id"] != msg_id:
             return await answer_cb(cb_id, "Session expired.", show_alert=True)
             
-        if idx in sess["opened"]: return await answer_cb(cb_id)
-        
-        user = await get_or_create_user(uid)
-        
-        if idx in sess["mines_pos"]:
-            await update_coin_stats(uid, sess["bet"], 0)
-            bal = float((await get_or_create_user(uid)).get("coin_balance", 0))
-            txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over\n{pe('🏆')} Win: $0.00\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-            await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True, explode_idx=idx))
-            del mines_sessions[uid]
-        else:
-            sess["opened"].append(idx)
-            win_amt = round(sess["bet"] * calc_mines_mult(sess["mines"], len(sess["opened"])), 2)
+        async with sess["lock"]:
+            if idx in sess["opened"]: return await answer_cb(cb_id)
             
-            if len(sess["opened"]) == (25 - sess["mines"]):
-                won_profit = round(win_amt - sess["bet"], 2)
-                await users_db.update_one({"user_id": uid}, {"$inc": {"coin_balance": win_amt}})
-                await update_coin_stats(uid, sess["bet"], won_profit)
+            user = await get_or_create_user(uid)
+            
+            if idx in sess["mines_pos"]:
+                await update_coin_stats(uid, sess["bet"], 0)
                 bal = float((await get_or_create_user(uid)).get("coin_balance", 0))
-                
-                try:
-                    display_name = user.get("name", "Player") if not user.get("anonymous") else "Anonymous"
-                    log_text = f"{pe('🏆')} <b>Match Ended</b>\n\n{pe('🎮')} <b>Game:</b> Mines\n{pe('👑')} <b>Winner:</b> {display_name}\n{pe('💰')} <b>Won:</b> {usd(win_amt)} Coins"
-                    await send_msg(WIN_LOG_CHANNEL_ID, log_text, disable_web_page_preview=True)
-                except Exception: pass
-                
-                txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over (Cleared!)\n{pe('🏆')} Win: {usd(win_amt)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-                await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True))
-                del mines_sessions[uid]
+                txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over\n{pe('🏆')} Win: $0.00\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
+                await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True, explode_idx=idx))
+                mines_sessions.pop(uid, None)
             else:
-                txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('🏆')} Win: {usd(win_amt)}"
-                await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid))
+                sess["opened"].append(idx)
+                win_amt = round(sess["bet"] * calc_mines_mult(sess["mines"], len(sess["opened"])), 2)
+                
+                if len(sess["opened"]) == (25 - sess["mines"]):
+                    won_profit = round(win_amt - sess["bet"], 2)
+                    await users_db.update_one({"user_id": uid}, {"$inc": {"coin_balance": win_amt}})
+                    await update_coin_stats(uid, sess["bet"], won_profit)
+                    bal = float((await get_or_create_user(uid)).get("coin_balance", 0))
+                    
+                    try:
+                        display_name = user.get("name", "Player") if not user.get("anonymous") else "Anonymous"
+                        log_text = f"{pe('🏆')} <b>Match Ended</b>\n\n{pe('🎮')} <b>Game:</b> Mines\n{pe('👑')} <b>Winner:</b> {display_name}\n{pe('💰')} <b>Won:</b> {usd(win_amt)} Coins"
+                        await send_msg(WIN_LOG_CHANNEL_ID, log_text, disable_web_page_preview=True)
+                    except Exception: pass
+                    
+                    txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over (Cleared!)\n{pe('🏆')} Win: {usd(win_amt)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
+                    await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True))
+                    mines_sessions.pop(uid, None)
+                else:
+                    txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('🏆')} Win: {usd(win_amt)}"
+                    await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid))
         return await answer_cb(cb_id)
 
     elif data == "mines_cashout":
@@ -2628,23 +2632,24 @@ async def cb_router(client: Client, call: CallbackQuery):
         if not sess or sess["chat_id"] != chat_id or sess["msg_id"] != msg_id:
             return await answer_cb(cb_id, "Session expired.", show_alert=True)
             
-        win_amt = round(sess["bet"] * calc_mines_mult(sess["mines"], len(sess["opened"])), 2)
-        won_profit = round(win_amt - sess["bet"], 2)
-        await users_db.update_one({"user_id": uid}, {"$inc": {"coin_balance": win_amt}})
-        await update_coin_stats(uid, sess["bet"], won_profit)
-        
-        user = await get_or_create_user(uid)
-        bal = float(user.get("coin_balance", 0))
-        
-        try:
-            display_name = user.get("name", "Player") if not user.get("anonymous") else "Anonymous"
-            log_text = f"{pe('🏆')} <b>Match Ended</b>\n\n{pe('🎮')} <b>Game:</b> Mines\n{pe('👑')} <b>Winner:</b> {display_name}\n{pe('💰')} <b>Won:</b> {usd(win_amt)} Coins"
-            await send_msg(WIN_LOG_CHANNEL_ID, log_text, disable_web_page_preview=True)
-        except Exception: pass
-        
-        txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over\n{pe('🏆')} Win: {usd(win_amt)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-        await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True))
-        del mines_sessions[uid]
+        async with sess["lock"]:
+            win_amt = round(sess["bet"] * calc_mines_mult(sess["mines"], len(sess["opened"])), 2)
+            won_profit = round(win_amt - sess["bet"], 2)
+            await users_db.update_one({"user_id": uid}, {"$inc": {"coin_balance": win_amt}})
+            await update_coin_stats(uid, sess["bet"], won_profit)
+            
+            user = await get_or_create_user(uid)
+            bal = float(user.get("coin_balance", 0))
+            
+            try:
+                display_name = user.get("name", "Player") if not user.get("anonymous") else "Anonymous"
+                log_text = f"{pe('🏆')} <b>Match Ended</b>\n\n{pe('🎮')} <b>Game:</b> Mines\n{pe('👑')} <b>Winner:</b> {display_name}\n{pe('💰')} <b>Won:</b> {usd(win_amt)} Coins"
+                await send_msg(WIN_LOG_CHANNEL_ID, log_text, disable_web_page_preview=True)
+            except Exception: pass
+            
+            txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over\n{pe('🏆')} Win: {usd(win_amt)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
+            await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True))
+            mines_sessions.pop(uid, None)
         return await answer_cb(cb_id)
         
 @app.on_message(filters.private & filters.text & ~filters.regex(r"^/"))
@@ -2767,18 +2772,16 @@ async def web_server():
 async def main():
     await app.start()
     
-    # --- YAHAN NAYA CODE DAALNA HAI (DB Indexing for Extreme Speed) ---
     print("Creating DB Indexes for fast lookup...")
     await users_db.create_index("user_id")
     await auth_groups_db.create_index("chat_id")
     await games_db.create_index("status")
     await games_db.create_index("user_id")
-    # -----------------------------------------------------------------
 
     asyncio.create_task(web_server())
     asyncio.create_task(background_verification_check())
     asyncio.create_task(sweeper())
-    asyncio.create_task(daily_race_rewarder()) 
+    asyncio.create_task(weekly_race_rewarder()) 
     await app.set_bot_commands([BotCommand("start", "Start Menu"), BotCommand("bonus", "Claim Free Coins"), BotCommand("help", "Commands list")])
     print("Bot is successfully running! ✅ Anti-freeze, PvP, and Context Replies Active.")
     await idle()
