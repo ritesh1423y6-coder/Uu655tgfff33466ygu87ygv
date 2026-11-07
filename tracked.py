@@ -341,7 +341,7 @@ TR = {
         "draw_none": "अभी तक कोई ड्रा रिज़ल्ट उपलब्ध नहीं है।",
         "draw_res": f"{pe('🎉')} <b>डेली ड्रा रिज़ल्ट</b> {pe('🎉')}\n\n{pe('⏱')} <b>समय:</b> {{time}}\n{pe('👥')} <b>कुल प्रतिभागी:</b> {{total}}\n{pe('🎁')} <b>इनाम:</b> ${{amt}} प्रत्येक\n\n{pe('🏆')} <b>विजेता:</b>\n{{winners}}",
         "wd_addr": f"{pe('📍')} कृपया अपना {pe('💎')} TON निकासी पता भेजें:\n\n<b>उदाहरण:</b> <code>UQ...</code>",
-        "wd_rej": f"{pe('❌')} <b>निकासी अस्वीकृत!</b>\nरकम: ${{amount}}\nकारण: {{reason}}\nफंड्स वापस कर दिए गए हैं。",
+        "wd_rej": f"{pe('❌')} <b>निकासी अस्वीकृत!</b>\nरकम: ${{amount}}\nकारण: {{reason}}\nफंड्स वापस कर दिए गए हैं।",
         "bonus_text": f"{pe('🎁')} <b>फ्री कॉइन बोनस</b>\n\nआप हर 2 घंटे में गेम्स खेलने के लिए 1,500 कॉइन्स क्लेम कर सकते हैं!",
         "btn_verify": "सत्यापन",
         "btn_affiliate": "रेफरल",
@@ -394,6 +394,8 @@ async def get_lang(user_id):
     return l
 
 async def get_config():
+    global CONFIG_CACHE  # <--- Ise bilkul function ki pehli line par rakho
+    
     now = time.time()
     if CONFIG_CACHE["data"] and now - CONFIG_CACHE["time"] < 60: 
         return CONFIG_CACHE["data"]
@@ -944,7 +946,7 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
             sess["prompt_msg_id"] = sent["message_id"] if sent else 0
         except Exception: pass
         
-# ================= BACKGROUND TIMERS =================
+  # ================= BACKGROUND TIMERS =================
 async def weekly_race_timer_task():
     """Runs a 7-day (7 * 24 * 3600 seconds) timer when race is toggled ON, then auto-offs and notifies admins/group."""
     while True:
@@ -957,7 +959,7 @@ async def weekly_race_timer_task():
         if not start_time:
             # If race is ON but no start time recorded, set it now
             await config_db.update_one({"_id": "settings"}, {"$set": {"race_start_time": time.time()}}, upsert=True)
-            global CONFIG_CACHE; CONFIG_CACHE["time"] = 0
+            CONFIG_CACHE["time"] = 0
             continue
             
         elapsed = time.time() - start_time
@@ -999,7 +1001,7 @@ async def weekly_race_timer_task():
                 {"$set": {"race_enabled": False}, "$unset": {"race_start_time": ""}}, 
                 upsert=True
             )
-            global CONFIG_CACHE; CONFIG_CACHE["time"] = 0
+            CONFIG_CACHE["time"] = 0
             
             # Reset all weekly wagers for the next race cycle
             await users_db.update_many({}, {"$set": {"weekly_coin_wagered": 0.0}})
@@ -1534,7 +1536,7 @@ async def race_cmd(client: Client, message: Message):
             update_data["race_start_time"] = None
             
         await config_db.update_one({"_id": "settings"}, {"$set": update_data}, upsert=True)
-        global CONFIG_CACHE; CONFIG_CACHE["time"] = 0 
+        CONFIG_CACHE["time"] = 0 
         return await send_msg(chat_id, f"{pe('✅')} Weekly Coin Race has been turned <b>{'ON (7-Day Timer Started)' if new_state else 'OFF'}</b>.", reply_to=message.id)
 
     if not race_on:
@@ -1952,7 +1954,7 @@ async def toggleaffiliate_cmd(client: Client, message: Message):
     conf = await get_config()
     new_state = not conf.get("affiliate_enabled", True)
     await config_db.update_one({"_id": "settings"}, {"$set": {"affiliate_enabled": new_state}}, upsert=True)
-    global CONFIG_CACHE; CONFIG_CACHE["time"] = 0 
+    CONFIG_CACHE["time"] = 0 
     await send_msg(message.chat.id, f"{pe('✏️')} Affiliate System is now <b>{'ENABLED' if new_state else 'DISABLED'}</b>.", reply_to=message.id)
 
 @app.on_message(filters.command("withdrawupdate"))
@@ -1962,7 +1964,7 @@ async def withdrawupdate_cmd(client: Client, message: Message):
         parts = message.text.split()
         new_min = float(parts[1])
         await config_db.update_one({"_id": "settings"}, {"$set": {"min_withdrawal": new_min}}, upsert=True)
-        global CONFIG_CACHE; CONFIG_CACHE["time"] = 0
+        CONFIG_CACHE["time"] = 0
         await send_msg(message.chat.id, f"{pe('✅')} Minimum withdrawal limit successfully updated to <b>${new_min}</b>.", reply_to=message.id)
     except:
         await send_msg(message.chat.id, "Usage: /withdrawupdate [amount]\nExample: `/withdrawupdate 10`", reply_to=message.id)
@@ -1973,7 +1975,7 @@ async def toggledraw_cmd(client: Client, message: Message):
     conf = await get_config()
     new_state = not conf.get("draw_enabled", True)
     await config_db.update_one({"_id": "settings"}, {"$set": {"draw_enabled": new_state}}, upsert=True)
-    global CONFIG_CACHE; CONFIG_CACHE["time"] = 0 
+    CONFIG_CACHE["time"] = 0 
     await send_msg(message.chat.id, f"{pe('✅')} Draw is now <b>{'ENABLED' if new_state else 'DISABLED'}</b>.", reply_to=message.id)
 
 @app.on_message(filters.command("drawsettings"))
@@ -2086,7 +2088,7 @@ async def togglewd_cmd(client: Client, message: Message):
     conf = await get_config()
     new_state = not conf.get("withdrawal_enabled", True)
     await config_db.update_one({"_id": "settings"}, {"$set": {"withdrawal_enabled": new_state}}, upsert=True)
-    global CONFIG_CACHE; CONFIG_CACHE["time"] = 0 
+    CONFIG_CACHE["time"] = 0 
     await send_msg(message.chat.id, f"{pe('✏️')} Withdrawals are now <b>{'ENABLED' if new_state else 'DISABLED'}</b>.", reply_to=message.id)
 
 @app.on_message(filters.command("broadcast"))
