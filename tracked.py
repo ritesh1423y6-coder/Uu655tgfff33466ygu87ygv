@@ -341,7 +341,7 @@ TR = {
         "draw_none": "अभी तक कोई ड्रा रिज़ल्ट उपलब्ध नहीं है।",
         "draw_res": f"{pe('🎉')} <b>डेली ड्रा रिज़ल्ट</b> {pe('🎉')}\n\n{pe('⏱')} <b>समय:</b> {{time}}\n{pe('👥')} <b>कुल प्रतिभागी:</b> {{total}}\n{pe('🎁')} <b>इनाम:</b> ${{amt}} प्रत्येक\n\n{pe('🏆')} <b>विजेता:</b>\n{{winners}}",
         "wd_addr": f"{pe('📍')} कृपया अपना {pe('💎')} TON निकासी पता भेजें:\n\n<b>उदाहरण:</b> <code>UQ...</code>",
-        "wd_rej": f"{pe('❌')} <b>निकासी अस्वीकृत!</b>\nरकम: ${{amount}}\nकारण: {{reason}}\nफंड्स वापस कर दिए गए हैं।",
+        "wd_rej": f"{pe('❌')} <b>निकासी अस्वीकृत!</b>\nरकम: ${{amount}}\nकारण: {{reason}}\nफंड्स वापस कर दिए गए हैं。",
         "bonus_text": f"{pe('🎁')} <b>फ्री कॉइन बोनस</b>\n\nआप हर 2 घंटे में गेम्स खेलने के लिए 1,500 कॉइन्स क्लेम कर सकते हैं!",
         "btn_verify": "सत्यापन",
         "btn_affiliate": "रेफरल",
@@ -474,7 +474,8 @@ async def update_coin_stats(uid: int, stake: float, won_profit: float = 0.0):
     }
     
     if u.get("last_wager_date") != today:
-        updates["$set"] = {"last_wager_date": today, "daily_coin_wagered": stake, "weekly_coin_wagered": stake}
+        updates["$set"] = {"last_wager_date": today, "daily_coin_wagered": stake}
+        updates["$inc"]["weekly_coin_wagered"] = stake
     else:
         updates["$inc"]["daily_coin_wagered"] = stake
         updates["$inc"]["weekly_coin_wagered"] = stake
@@ -942,56 +943,75 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
             sent = await send_msg(chat_id, f"{pe('⚠️')} {mention(sess['turn_uid'])}, <b>tap below to continue your turn:</b>", markup=turn_kb(sess), owner_id=sess["turn_uid"], reply_to=reply_to_id)
             sess["prompt_msg_id"] = sent["message_id"] if sent else 0
         except Exception: pass
-
+        
 # ================= BACKGROUND TIMERS =================
-async def weekly_race_rewarder():
+async def weekly_race_timer_task():
+    """Runs a 7-day (7 * 24 * 3600 seconds) timer when race is toggled ON, then auto-offs and notifies admins/group."""
     while True:
-        now = datetime.datetime.now()
-        days_until_monday = (7 - now.weekday()) % 7
-        if days_until_monday == 0 and (now.hour > 0 or now.minute > 0 or now.second > 0):
-            days_until_monday = 7
-        next_monday = (now + datetime.timedelta(days=days_until_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
-        sleep_seconds = (next_monday - now).total_seconds()
-        
-        await asyncio.sleep(sleep_seconds)
-        
+        await asyncio.sleep(5)
         conf = await get_config()
         if not conf.get("race_enabled", False):
             continue
             
-        pipeline = [
-            {"$match": {"weekly_coin_wagered": {"$gt": 0}}},
-            {"$sort": {"weekly_coin_wagered": -1}},
-            {"$limit": 5} 
-        ]
-        winners = await users_db.aggregate(pipeline).to_list(length=5)
-        
-        if winners:
-            rewards = [25.0, 15.0, 10.0] 
-            log_text = f"{pe('🏆')} <b>WEEKLY COIN RACE ENDED! Rewards Distributed!</b>\n\n"
+        start_time = conf.get("race_start_time")
+        if not start_time:
+            # If race is ON but no start time recorded, set it now
+            await config_db.update_one({"_id": "settings"}, {"$set": {"race_start_time": time.time()}}, upsert=True)
+            global CONFIG_CACHE; CONFIG_CACHE["time"] = 0
+            continue
             
-            for i, winner in enumerate(winners):
-                uid = winner["user_id"]
-                if i < len(rewards):
-                    reward = rewards[i]
-                else:
-                    reward = 0.0
-                safe_name = html.escape(winner.get("name", "Player"))
-                
-                if reward > 0:
-                    await users_db.update_one({"user_id": uid}, {"$inc": {"balance": reward}})
-                    log_text += f"<b>{i+1}.</b> {safe_name} - Won {usd(reward)}\n"
-                    try: 
-                        await send_msg(uid, f"{pe('🎉')} <b>Congratulations!</b> You placed #{i+1} in last week's Coin Race and won {usd(reward)} real balance!")
-                    except: pass
-                else:
-                    log_text += f"<b>{i+1}.</b> {safe_name}\n"
+        elapsed = time.time() - start_time
+        duration = 7 * 24 * 3600  # Exactly 7 days in seconds
+        
+        if elapsed >= duration:
+            # 7 Days completed! Calculate top 3 winners
+            pipeline = [
+                {"$match": {"weekly_coin_wagered": {"$gt": 0}}},
+                {"$sort": {"weekly_coin_wagered": -1}},
+                {"$limit": 3} 
+            ]
+            winners = await users_db.aggregate(pipeline).to_list(length=3)
+            
+            rewards = [25.0, 15.0, 10.0] 
+            log_text = f"{pe('🏆')} <b>7-DAY WEEKLY COIN RACE ENDED! Rewards Distributed!</b>\n\n"
+            
+            if winners:
+                for i, winner in enumerate(winners):
+                    uid = winner["user_id"]
+                    reward = rewards[i] if i < len(rewards) else 0.0
+                    safe_name = html.escape(winner.get("name", "Player"))
+                    score = round(winner.get("weekly_coin_wagered", 0))
                     
+                    if reward > 0:
+                        await users_db.update_one({"user_id": uid}, {"$inc": {"balance": reward}})
+                        log_text += f"<b>{i+1}.</b> {safe_name} ({score:,} Coins) - Won {usd(reward)}\n"
+                        try: 
+                            await send_msg(uid, f"{pe('🎉')} <b>Congratulations!</b> You placed #{i+1} in the 7-day Coin Race and won {usd(reward)} real balance!")
+                        except: pass
+                    else:
+                        log_text += f"<b>{i+1}.</b> {safe_name} ({score:,} Coins)\n"
+            else:
+                log_text += "<i>No activity recorded during this race period.</i>\n"
+                
+            # Auto-turn OFF the race and reset timers
+            await config_db.update_one(
+                {"_id": "settings"}, 
+                {"$set": {"race_enabled": False}, "$unset": {"race_start_time": ""}}, 
+                upsert=True
+            )
+            global CONFIG_CACHE; CONFIG_CACHE["time"] = 0
+            
+            # Reset all weekly wagers for the next race cycle
+            await users_db.update_many({}, {"$set": {"weekly_coin_wagered": 0.0}})
+            
+            # Notify Tracking Group and Owner / Admins
             try:
                 await send_msg(TRACK_GROUP_ID, log_text, disable_web_page_preview=True)
             except: pass
             
-        await users_db.update_many({}, {"$set": {"weekly_coin_wagered": 0.0}})
+            try:
+                await send_msg(OWNER_ID, f"{pe('🛡')} <b>Admin Alert:</b> 7-day Weekly Race has successfully ended and auto-turned OFF.\n\n{log_text}")
+            except: pass
 
 async def rain_timer_task(chat_id, message_id, event_id, end_time, total_amt, win_count, min_msgs, min_turnover):
     while True:
@@ -1504,12 +1524,21 @@ async def race_cmd(client: Client, message: Message):
         if not is_admin_check:
             return await send_msg(chat_id, f"{pe('⚠️')} You do not have permission to toggle the race.", reply_to=message.id)
         new_state = args[0].lower() == "on"
-        await config_db.update_one({"_id": "settings"}, {"$set": {"race_enabled": new_state}}, upsert=True)
+        
+        update_data = {"race_enabled": new_state}
+        if new_state:
+            update_data["race_start_time"] = time.time()
+            # Reset weekly stats when turning race ON fresh
+            await users_db.update_many({}, {"$set": {"weekly_coin_wagered": 0.0}})
+        else:
+            update_data["race_start_time"] = None
+            
+        await config_db.update_one({"_id": "settings"}, {"$set": update_data}, upsert=True)
         global CONFIG_CACHE; CONFIG_CACHE["time"] = 0 
-        return await send_msg(chat_id, f"{pe('✅')} Race system has been turned <b>{'ON' if new_state else 'OFF'}</b>.", reply_to=message.id)
+        return await send_msg(chat_id, f"{pe('✅')} Weekly Coin Race has been turned <b>{'ON (7-Day Timer Started)' if new_state else 'OFF'}</b>.", reply_to=message.id)
 
     if not race_on:
-        return 
+        return await send_msg(chat_id, f"{pe('⚠️')} Weekly Coin Race is currently **OFF**. Admins can enable it using `/race on`.", reply_to=message.id)
 
     pipeline = [
         {"$match": {"weekly_coin_wagered": {"$gt": 0}}},
@@ -1518,8 +1547,17 @@ async def race_cmd(client: Client, message: Message):
     ]
     results = await users_db.aggregate(pipeline).to_list(length=5)
     
+    # Calculate remaining time for the 7-day race
+    start_time = conf.get("race_start_time", time.time())
+    rem_seconds = max(0, (7 * 24 * 3600) - (time.time() - start_time))
+    days, rem_sec = divmod(int(rem_seconds), 86400)
+    hours, rem_sec = divmod(rem_sec, 3600)
+    minutes, _ = divmod(rem_sec, 60)
+    time_left_str = f"{days}d {hours}h {minutes}m"
+    
     text = f"{pe('🏆')} <b>WEEKLY COIN RACE!</b>\n\n" \
-           f"<i>The top 3 weekly coin Wagered will share a total prize pool of <b>$50</b>!</i>\n\n" \
+           f"<i>The top 3 weekly coin Wagered will share a total prize pool of <b>$50</b>!</i>\n" \
+           f"{pe('⏱')} <b>Time Remaining:</b> {time_left_str}\n\n" \
            f"{pe('📈')} <b>Top 5 Wageres This Week:</b>\n"
            
     if not results:
@@ -2781,7 +2819,7 @@ async def main():
     asyncio.create_task(web_server())
     asyncio.create_task(background_verification_check())
     asyncio.create_task(sweeper())
-    asyncio.create_task(weekly_race_rewarder()) 
+    asyncio.create_task(weekly_race_timer_task()) 
     await app.set_bot_commands([BotCommand("start", "Start Menu"), BotCommand("bonus", "Claim Free Coins"), BotCommand("help", "Commands list")])
     print("Bot is successfully running! ✅ Anti-freeze, PvP, and Context Replies Active.")
     await idle()
