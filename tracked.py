@@ -42,7 +42,7 @@ ACTIVE_HELPER_TOKENS = [t.strip() for t in [HELPER_BOT_TOKEN_1, HELPER_BOT_TOKEN
 API_ID = 35831190  
 API_HASH = "f625657330797a7f149855cbdfcf9dae"
 MONGO_URI = "mongodb+srv://Cricket_231:Rohit1616%40@zolmdho.mongodb.net/?appName=Cluster0" 
-OWNER_ID = 7691071175  
+OWNER_ID = 8798465416
 TRACK_GROUP_ID = -1003946482336  
 REQUIRED_USERNAME_TAG = "@redcube"
 FSUB_CHANNEL = "@redcube_en"     
@@ -1356,9 +1356,16 @@ async def start_cmd(client: Client, message: Message):
         except:
             pass 
             
+    # First, send the welcome heading (Greeting)
     welcome_head = TR[lang]["welcome_head"].format(name=html.escape(user['name']))
+    await send_msg(message.chat.id, welcome_head, reply_to=message.id)
+    
+    # Optional: Add a tiny delay so they arrive in perfect order
+    await asyncio.sleep(0.3) 
+    
+    # Second, send the main body with the instructions and buttons
     welcome_body = TR[lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get('bio_link', 'No Link Generated'))
-    await send_msg(message.chat.id, welcome_head + welcome_body, markup=get_main_menu(lang), disable_web_page_preview=True, reply_to=message.id)
+    await send_msg(message.chat.id, welcome_body, markup=get_main_menu(lang), disable_web_page_preview=True)
     
     if await is_admin(message.from_user.id):
         await send_msg(message.chat.id, f"{pe('🛡')} <b>Admin Access Recognized!</b> Send /adminhelp to see your commands.")
@@ -2601,7 +2608,13 @@ async def cb_router(client: Client, call: CallbackQuery):
         user_langs[uid] = new_lang
         user = await get_or_create_user(uid, call.from_user)
         welcome_body = TR[new_lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get('bio_link', ''))
-        await edit_msg(chat_id, msg_id, TR[new_lang]["lang_set"] + "\n\n" + welcome_body, markup=get_main_menu(new_lang))
+        # First, confirm the language change
+        await edit_msg(chat_id, msg_id, TR[new_lang]["lang_set"])
+        
+        await asyncio.sleep(0.3)
+        
+        # Second, send the new welcome menu as a fresh message
+        await send_msg(chat_id, welcome_body, markup=get_main_menu(new_lang), disable_web_page_preview=True)
 
     elif data == "menu_leaderboard":
         if is_private and not await pass_fsub(client, call): return 
