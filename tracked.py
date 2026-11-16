@@ -36,7 +36,8 @@ BOT_TOKEN = "9102679894:AAHF8ZqGiOJ-S_pdN10tpQARgcgHpXOcmhk"
 # Helper bot tokens
 HELPER_BOT_TOKEN_1 = "9018656267:AAGDUHGH5a2gcoeetlDNWfcGy-YLW95bdUc"
 HELPER_BOT_TOKEN_2 = "9202520474:AAEWpPA0OJSBAn7enPldnDfTgB-KbWGvSOY"
-ACTIVE_HELPER_TOKENS = [t.strip() for t in [HELPER_BOT_TOKEN_1, HELPER_BOT_TOKEN_2] if t.strip()]
+HELPER_BOT_TOKEN_3 = "" # Add your 3rd helper token here
+ACTIVE_HELPER_TOKENS = [t.strip() for t in [HELPER_BOT_TOKEN_1, HELPER_BOT_TOKEN_2, HELPER_BOT_TOKEN_3] if t.strip()]
 
 API_ID = 35831190  
 API_HASH = "f625657330797a7f149855cbdfcf9dae"
@@ -394,7 +395,7 @@ async def get_lang(user_id):
     return l
 
 async def get_config():
-    global CONFIG_CACHE  # <--- Ise bilkul function ki pehli line par rakho
+    global CONFIG_CACHE  
     
     now = time.time()
     if CONFIG_CACHE["data"] and now - CONFIG_CACHE["time"] < 60: 
@@ -412,7 +413,8 @@ async def get_config():
             "affiliate_enabled": True,
             "min_withdrawal": 20.0,
             "min_bet": 1.0,
-            "race_enabled": False
+            "race_enabled": False,
+            "refferal_race_enabled": False
         }
         await config_db.insert_one({"_id": "settings", **conf})
         
@@ -434,7 +436,8 @@ async def get_or_create_user(user_id, user_obj=None):
             "lang": "en", "won_draw": False, "name": name,
             "ever_joined_group": False, "wagered": 0.0, "coin_wagered": 0.0, "coin_won": 0.0,
             "daily_coin_wagered": 0.0, "weekly_coin_wagered": 0.0, "last_wager_date": "",
-            "total_deposited": 0.0, "total_withdrawn": 0.0, "last_bonus_claim": 0
+            "total_deposited": 0.0, "total_withdrawn": 0.0, "last_bonus_claim": 0,
+            "weekly_referrals": 0
         }
         await users_db.insert_one(user)
     elif user_obj and (user.get("name") != name or user.get("name") == "User"):
@@ -946,7 +949,7 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
             sess["prompt_msg_id"] = sent["message_id"] if sent else 0
         except Exception: pass
         
-  # ================= BACKGROUND TIMERS =================
+# ================= BACKGROUND TIMERS =================
 async def weekly_race_timer_task():
     """Runs a 7-day (7 * 24 * 3600 seconds) timer when race is toggled ON, then auto-offs and notifies admins/group."""
     while True:
@@ -1013,6 +1016,74 @@ async def weekly_race_timer_task():
             
             try:
                 await send_msg(OWNER_ID, f"{pe('🛡')} <b>Admin Alert:</b> 7-day Weekly Race has successfully ended and auto-turned OFF.\n\n{log_text}")
+            except: pass
+
+async def weekly_refferal_race_timer_task():
+    """Runs a 7-day (7 * 24 * 3600 seconds) timer when Referral Race is ON, then auto-offs and rewards top referrers."""
+    while True:
+        await asyncio.sleep(5)
+        conf = await get_config()
+        if not conf.get("refferal_race_enabled", False):
+            continue
+            
+        start_time = conf.get("refferal_race_start_time")
+        if not start_time:
+            # Set time if not set
+            await config_db.update_one({"_id": "settings"}, {"$set": {"refferal_race_start_time": time.time()}}, upsert=True)
+            CONFIG_CACHE["time"] = 0
+            continue
+            
+        elapsed = time.time() - start_time
+        duration = 7 * 24 * 3600  # Exactly 7 days
+        
+        if elapsed >= duration:
+            # 7 Days completed! Calculate top 3 winners based on weekly_referrals
+            pipeline = [
+                {"$match": {"weekly_referrals": {"$gt": 0}}},
+                {"$sort": {"weekly_referrals": -1}},
+                {"$limit": 3} 
+            ]
+            winners = await users_db.aggregate(pipeline).to_list(length=3)
+            
+            rewards = [25.0, 15.0, 10.0] 
+            log_text = f"{pe('🏆')} <b>7-DAY REFERRAL RACE ENDED! Rewards Distributed!</b>\n\n"
+            
+            if winners:
+                for i, winner in enumerate(winners):
+                    uid = winner["user_id"]
+                    reward = rewards[i] if i < len(rewards) else 0.0
+                    safe_name = html.escape(winner.get("name", "Player"))
+                    score = winner.get("weekly_referrals", 0)
+                    
+                    if reward > 0:
+                        await users_db.update_one({"user_id": uid}, {"$inc": {"balance": reward}})
+                        log_text += f"<b>{i+1}.</b> {safe_name} ({score} Referrals) - Won {usd(reward)}\n"
+                        try: 
+                            await send_msg(uid, f"{pe('🎉')} <b>Congratulations!</b> You placed #{i+1} in the 7-day Referral Race and won {usd(reward)} real balance!")
+                        except: pass
+                    else:
+                        log_text += f"<b>{i+1}.</b> {safe_name} ({score} Referrals)\n"
+            else:
+                log_text += "<i>No approved referrals recorded during this race period.</i>\n"
+                
+            # Auto-turn OFF the race and reset timers
+            await config_db.update_one(
+                {"_id": "settings"}, 
+                {"$set": {"refferal_race_enabled": False}, "$unset": {"refferal_race_start_time": ""}}, 
+                upsert=True
+            )
+            CONFIG_CACHE["time"] = 0
+            
+            # Reset all weekly referrals for the next race cycle
+            await users_db.update_many({}, {"$set": {"weekly_referrals": 0}})
+            
+            # Notify Tracking Group and Owner
+            try:
+                await send_msg(TRACK_GROUP_ID, log_text, disable_web_page_preview=True)
+            except: pass
+            
+            try:
+                await send_msg(OWNER_ID, f"{pe('🛡')} <b>Admin Alert:</b> 7-day Referral Race has successfully ended.\n\n{log_text}")
             except: pass
 
 async def rain_timer_task(chat_id, message_id, event_id, end_time, total_amt, win_count, min_msgs, min_turnover):
@@ -1572,6 +1643,66 @@ async def race_cmd(client: Client, message: Message):
             
     await send_msg(chat_id, text, disable_web_page_preview=True, reply_to=message.id)
 
+@app.on_message(filters.command("refferal"))
+async def refferal_cmd(client: Client, message: Message):
+    uid = message.from_user.id
+    chat_id = message.chat.id
+    is_admin_check = await is_admin(uid)
+    args = message.command[1:] if len(message.command) > 1 else []
+
+    conf = await get_config()
+    race_on = conf.get("refferal_race_enabled", False)
+
+    if args and args[0].lower() in ["on", "off"]:
+        if not is_admin_check:
+            return await send_msg(chat_id, f"{pe('⚠️')} You do not have permission to toggle the referral race.", reply_to=message.id)
+        new_state = args[0].lower() == "on"
+        
+        update_data = {"refferal_race_enabled": new_state}
+        if new_state:
+            update_data["refferal_race_start_time"] = time.time()
+            # Reset weekly referrals when turning race ON fresh
+            await users_db.update_many({}, {"$set": {"weekly_referrals": 0}})
+        else:
+            update_data["refferal_race_start_time"] = None
+            
+        await config_db.update_one({"_id": "settings"}, {"$set": update_data}, upsert=True)
+        CONFIG_CACHE["time"] = 0 
+        return await send_msg(chat_id, f"{pe('✅')} Weekly Referral Race has been turned <b>{'ON (7-Day Timer Started)' if new_state else 'OFF'}</b>.", reply_to=message.id)
+
+    if not race_on:
+        return await send_msg(chat_id, f"{pe('⚠️')} Weekly Referral Race is currently **OFF**. Admins can enable it using `/refferal on`.", reply_to=message.id)
+
+    pipeline = [
+        {"$match": {"weekly_referrals": {"$gt": 0}}},
+        {"$sort": {"weekly_referrals": -1}},
+        {"$limit": 7}
+    ]
+    results = await users_db.aggregate(pipeline).to_list(length=7)
+    
+    # Calculate remaining time for the 7-day race
+    start_time = conf.get("refferal_race_start_time", time.time())
+    rem_seconds = max(0, (7 * 24 * 3600) - (time.time() - start_time))
+    days, rem_sec = divmod(int(rem_seconds), 86400)
+    hours, rem_sec = divmod(rem_sec, 3600)
+    minutes, _ = divmod(rem_sec, 60)
+    time_left_str = f"{days}d {hours}h {minutes}m"
+    
+    text = f"{pe('🏆')} <b>WEEKLY REFERRAL RACE!</b>\n\n" \
+           f"<i>The top 3 referrers will share a total prize pool of <b>$50</b>!</i>\n" \
+           f"{pe('⏱')} <b>Time Remaining:</b> {time_left_str}\n\n" \
+           f"{pe('📈')} <b>Top 7 Referrers This Week:</b>\n"
+           
+    if not results:
+        text += "<i>No approved referrals yet this week. Be the first!</i>"
+    else:
+        for i, res in enumerate(results, start=1):
+            name = await fetch_real_name(res['user_id'], res.get('name'))
+            score = res.get('weekly_referrals', 0)
+            text += f"<b>{i}.</b> {html.escape(name)} - {score} Referrals\n"
+            
+    await send_msg(chat_id, text, disable_web_page_preview=True, reply_to=message.id)
+
 @app.on_message(filters.command("report"))
 async def report_cmd(client: Client, message: Message):
     if not await is_admin(message.from_user.id): return
@@ -1933,6 +2064,7 @@ async def adminhelp_cmd(client: Client, message: Message):
         "🔸 `/report [username/id]` - Full user report (coins, balances, etc)\n"
         "🔸 `/affiliatecheck [username/id]` - Check user affiliate details\n"
         "🔸 `/race on` / `/race off` - Turn weekly coin race on/off\n"
+        "🔸 `/refferal on` / `/refferal off` - Turn weekly referral race on/off\n"
         "🔸 `/rain [wins] [amt] [msgs] [min_coin_wager] [time]` - Start group rain\n"
         "🔸 `/access` (in a group) - Authorize group for Leaderboard & Games\n"
         "🔸 `/revoke` (in a group) - Remove group authorization\n"
@@ -2224,6 +2356,10 @@ async def cb_router(client: Client, call: CallbackQuery):
                 reward_msg = f"{pe('🎉')} <b>Congratulations!</b> You reached {conf['affiliate_req']} members. ${reward} added!"
                 try: await send_msg(inviter_id, reward_msg)
                 except: pass
+                
+            # ADDING POINTS TO REFERRAL RACE ONLY IF ENABLED
+            if conf.get("refferal_race_enabled", False):
+                await users_db.update_one({"user_id": inviter_id}, {"$inc": {"weekly_referrals": 1}})
                 
             await edit_msg(chat_id, msg_id, f"{msg.text}\n\n{pe('✅')} <b>Approved by {mention(uid)}</b>", markup=None)
             await answer_cb(cb_id, "Request Approved!", show_alert=True)
@@ -2822,6 +2958,7 @@ async def main():
     asyncio.create_task(background_verification_check())
     asyncio.create_task(sweeper())
     asyncio.create_task(weekly_race_timer_task()) 
+    asyncio.create_task(weekly_refferal_race_timer_task())
     await app.set_bot_commands([BotCommand("start", "Start Menu"), BotCommand("bonus", "Claim Free Coins"), BotCommand("help", "Commands list")])
     print("Bot is successfully running! ✅ Anti-freeze, PvP, and Context Replies Active.")
     await idle()
