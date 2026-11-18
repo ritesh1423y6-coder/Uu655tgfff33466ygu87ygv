@@ -42,7 +42,7 @@ ACTIVE_HELPER_TOKENS = [t.strip() for t in [HELPER_BOT_TOKEN_1, HELPER_BOT_TOKEN
 API_ID = 35831190  
 API_HASH = "f625657330797a7f149855cbdfcf9dae"
 MONGO_URI = "mongodb+srv://Cricket_231:Rohit1616%40@zolmdho.mongodb.net/?appName=Cluster0" 
-OWNER_ID = 8798465416
+OWNER_ID = 8686340235
 TRACK_GROUP_ID = -1003946482336  
 REQUIRED_USERNAME_TAG = "@redcube"
 FSUB_CHANNEL = "@redcube_en"     
