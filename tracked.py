@@ -154,7 +154,7 @@ async def get_session() -> aiohttp.ClientSession:
     return HTTP_SESSION
 
 
-api_semaphore = asyncio.Semaphore(20)
+api_semaphore = asyncio.Semaphore(40)
 
 
 async def tg(method: str, use_helper: bool = False, retries: int = 2, **params):
@@ -179,7 +179,7 @@ async def tg(method: str, use_helper: bool = False, retries: int = 2, **params):
                     raise RuntimeError(res.get("description", str(res)))
             except (asyncio.TimeoutError, aiohttp.ClientError) as e:
                 if attempt < retries:
-                    await asyncio.sleep(0.4)
+                    await asyncio.sleep(0.35)
                     continue
                 raise RuntimeError(f"Network timeout on {method}: {e}")
 
@@ -286,6 +286,7 @@ admin_ticket_msgs = {}
 admin_withdraw_msgs = {}
 
 processed_msgs = {}
+processed_cbs = {}
 ldb_cache = {}
 ADMIN_CACHE = {"data": [], "time": 0}
 CONFIG_CACHE = {"data": None, "time": 0}
@@ -325,7 +326,7 @@ TR = {
         "btn_coins": "Coins",
         "btn_messages": "Messages",
         "btn_back": "Back",
-        "not_your_btn": f"{pe('⚠️')} This is not your message!"
+        "not_your_btn": "This button is not yours!"
     },
     "ru": {
         "welcome_head": f"Добро пожаловать <b>{{name}}</b>! {pe('👋')}\n\n",
@@ -360,7 +361,7 @@ TR = {
         "btn_coins": "Монеты",
         "btn_messages": "Сообщения",
         "btn_back": "Назад",
-        "not_your_btn": f"{pe('⚠️')} Это не ваше сообщение!"
+        "not_your_btn": "This button is not yours!"
     },
     "hi": {
         "welcome_head": f"Welcome <b>{{name}}</b>! {pe('👋')}\n\n",
@@ -395,7 +396,7 @@ TR = {
         "btn_coins": "Coins",
         "btn_messages": "Messages",
         "btn_back": "Back",
-        "not_your_btn": f"{pe('⚠️')} This is not your message!"
+        "not_your_btn": "This button is not yours!"
     }
 }
 
@@ -403,9 +404,20 @@ TR = {
 # ================= HELPER FUNCTIONS =================
 async def check_double_msg(user_id: int) -> bool:
     now = time.time()
-    if user_id in processed_msgs and now - processed_msgs[user_id] < 1.0:
+    last = processed_msgs.get(user_id, 0.0)
+    if now - last < 0.35:
         return True
     processed_msgs[user_id] = now
+    return False
+
+
+async def check_double_cb(user_id: int, cb_data: str) -> bool:
+    now = time.time()
+    key = (user_id, cb_data)
+    last = processed_cbs.get(key, 0.0)
+    if now - last < 0.25:
+        return True
+    processed_cbs[key] = now
     return False
 
 
@@ -734,21 +746,36 @@ async def send_emoji_roll(chat_id: int, game: str, n: int, reply_to: int = None,
         res = None
         if ACTIVE_HELPER_TOKENS:
             try:
-                res = await tg("sendDice", use_helper=True, retries=1, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
+                res = await tg("sendDice", use_helper=True, retries=2, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
             except Exception:
                 try:
-                    res = await tg("sendDice", use_helper=True, retries=1, chat_id=chat_id, emoji=emo)
+                    res = await tg("sendDice", use_helper=True, retries=2, chat_id=chat_id, emoji=emo)
                 except Exception:
                     res = None
         if not res:
-            res = await tg("sendDice", use_helper=False, retries=2, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
-        if res:
+            try:
+                res = await tg("sendDice", use_helper=False, retries=2, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
+            except Exception:
+                try:
+                    res = await tg("sendDice", use_helper=False, retries=2, chat_id=chat_id, emoji=emo)
+                except Exception:
+                    res = None
+        if res and "dice" in res:
             raw_val = res["dice"]["value"]
             actual_val = fix_dice_value(game, raw_val)
             values.append(actual_val)
+        else:
+            max_v = 6
+            if game in ["basket", "bask", "football"]:
+                rand_v = random.randint(1, 6)
+                values.append(fix_dice_value(game, rand_v))
+            elif game == "slot":
+                values.append(random.randint(1, 64))
+            else:
+                values.append(random.randint(1, max_v))
         if i < n - 1:
             await asyncio.sleep(0.08)
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(1.1)
     return values
 
 
@@ -889,6 +916,7 @@ async def finish_match(sess: dict, payout_a: float, payout_b: float = 0.0, cashe
     ua, ub = sess["ua"], sess["ub"]
 
     sess["status"] = "ended"
+    sess["rolling"] = False
 
     matches.pop(gid, None)
     user_match.pop(ua, None)
@@ -959,7 +987,7 @@ async def evaluate_round(sess: dict, reply_to_id: int = None):
     m, chat_id, game, ua, ub = sess["match"], sess["chat_id"], sess["game"], sess["ua"], sess["ub"]
     p1_mention = mention(ua)
     p2_mention = mention(ub) if ub else f"{pe('🤖')} <b>{html.escape(CASINO_NAME)}</b>"
-    mine, theirs = sess["u_rolls"], sess["b_rolls"]
+    mine, theirs = list(sess["u_rolls"]), list(sess["b_rolls"])
     sess["u_rolls"], sess["b_rolls"] = [], []
     w = m.play_round(mine, theirs)
 
@@ -969,6 +997,7 @@ async def evaluate_round(sess: dict, reply_to_id: int = None):
 
     if m.winner is not None:
         sess["status"] = "ended"
+        sess["rolling"] = False
         if sess["type"] == "bot":
             await finish_match(sess, round(sess["stake"] * 1.92, 2) if m.winner == 0 else 0.0, reply_to_id=reply_to_id)
         else:
@@ -977,93 +1006,112 @@ async def evaluate_round(sess: dict, reply_to_id: int = None):
         return
 
     sess["round_num"] = sess.get("round_num", 1) + 1
-    score_header = f"{game_pe(game)} <b>Score (Round {sess['round_num'] - 1})</b>\n\n• {p1_mention}: <b>{m.score[0]} points</b>\n• {p2_mention}: <b>{m.score[1]} points</b>{f'{pe("🤝")} <b>Tie round — replay!</b>' if w is None else ''}"
+    tie_note = f"\n{pe('🤝')} <b>Tie round — replay!</b>" if w is None else ""
+    score_header = f"{game_pe(game)} <b>Score (Round {sess['round_num'] - 1})</b>\n\n• {p1_mention}: <b>{m.score[0]} points</b>\n• {p2_mention}: <b>{m.score[1]} points</b>{tie_note}"
 
     if sess["type"] == "bot" and random.choice([True, False]):
         score_msg = await send_msg(chat_id, f"{score_header}\n\n{p2_mention} <b>is rolling first...</b>", reply_to=reply_to_id)
         bot_reply_id = score_msg["message_id"] if score_msg else reply_to_id
-        sess["b_rolls"] = await send_emoji_roll(chat_id, game, m.rolls_needed, reply_to=bot_reply_id, is_bot=True)
+        bot_rolls = await send_emoji_roll(chat_id, game, m.rolls_needed, reply_to=bot_reply_id, is_bot=True)
+        sess["b_rolls"] = bot_rolls
         sess["turn_uid"] = ua
         sess["last_action"] = time.time()
         sess["rolling"] = False
         sent = await send_msg(chat_id, f"{p1_mention}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=True), owner_id=ua, reply_to=reply_to_id)
         sess["prompt_msg_id"] = sent["message_id"] if sent else 0
     else:
-        sess["rolling"] = False
         sess["turn_uid"] = ua
         sess["last_action"] = time.time()
+        sess["rolling"] = False
         sent = await send_msg(chat_id, f"{score_header}\n\n{p1_mention}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=True), owner_id=ua, reply_to=reply_to_id)
         sess["prompt_msg_id"] = sent["message_id"] if sent else 0
 
 
 async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int = None):
     lock: asyncio.Lock = sess["lock"]
-    if lock.locked():
-        return
-    chat_id, game, m = sess["chat_id"], sess["game"], sess["match"]
-    needed = m.rolls_needed
-
     async with lock:
         if sess.get("status") != "playing":
+            return
+        if sess.get("rolling"):
             return
         sess["rolling"] = True
         sess["last_action"] = time.time()
         if sess.get("prompt_msg_id"):
-            asyncio.create_task(clear_buttons(chat_id, sess["prompt_msg_id"]))
+            asyncio.create_task(clear_buttons(sess["chat_id"], sess["prompt_msg_id"]))
             sess["prompt_msg_id"] = None
 
-        try:
-            if sess["type"] == "bot":
-                if order == "bot" and not sess["b_rolls"] and not sess["u_rolls"]:
-                    bot_rolls = await send_emoji_roll(chat_id, game, needed, reply_to=reply_to_id, is_bot=True)
-                    async with lock:
-                        sess["b_rolls"] = bot_rolls
-                        sess["turn_uid"] = sess["ua"]
+    chat_id, game, m = sess["chat_id"], sess["game"], sess["match"]
+    needed = m.rolls_needed
+
+    try:
+        if sess["type"] == "bot":
+            if order == "bot" and not sess["b_rolls"] and not sess["u_rolls"]:
+                bot_rolls = await send_emoji_roll(chat_id, game, needed, reply_to=reply_to_id, is_bot=True)
+                async with lock:
+                    if sess.get("status") != "playing":
                         sess["rolling"] = False
-                        sent = await send_msg(chat_id, f"{mention(sess['ua'])}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=False), owner_id=sess["ua"], reply_to=reply_to_id)
-                        sess["prompt_msg_id"] = sent["message_id"] if sent else 0
+                        return
+                    sess["b_rolls"] = bot_rolls
+                    sess["turn_uid"] = sess["ua"]
+                    sess["last_action"] = time.time()
+                    sess["rolling"] = False
+                    sent = await send_msg(chat_id, f"{mention(sess['ua'])}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=False), owner_id=sess["ua"], reply_to=reply_to_id)
+                    sess["prompt_msg_id"] = sent["message_id"] if sent else 0
+                return
+
+            rem_u = needed - len(sess["u_rolls"])
+            if rem_u > 0:
+                new_u = await send_emoji_roll(chat_id, game, rem_u, reply_to=reply_to_id)
+                sess["u_rolls"] += new_u
+
+            rem_b = needed - len(sess["b_rolls"])
+            if rem_b > 0:
+                b_msg = await send_msg(chat_id, f"{pe('🤖')} <b>{html.escape(CASINO_NAME)}'s turn...</b>", reply_to=reply_to_id)
+                new_b = await send_emoji_roll(chat_id, game, rem_b, reply_to=b_msg["message_id"] if b_msg else reply_to_id, is_bot=True)
+                sess["b_rolls"] += new_b
+
+            async with lock:
+                if sess.get("status") != "playing":
+                    sess["rolling"] = False
                     return
-                async with lock:
-                    rem_u = needed - len(sess["u_rolls"])
-                if rem_u > 0:
-                    new_u = await send_emoji_roll(chat_id, game, rem_u, reply_to=reply_to_id)
-                    async with lock:
-                        sess["u_rolls"] += new_u
-                async with lock:
-                    rem_b = needed - len(sess["b_rolls"])
-                if rem_b > 0:
-                    b_msg = await send_msg(chat_id, f"{pe('🤖')} <b>{html.escape(CASINO_NAME)}'s turn...</b>", reply_to=reply_to_id)
-                    new_b = await send_emoji_roll(chat_id, game, rem_b, reply_to=b_msg["message_id"] if b_msg else reply_to_id, is_bot=True)
-                    async with lock:
-                        sess["b_rolls"] += new_b
                 await evaluate_round(sess, reply_to_id=reply_to_id)
-            else:
-                if uid == sess["ua"]:
-                    async with lock:
-                        rem = needed - len(sess["u_rolls"])
-                    if rem > 0:
-                        new_u = await send_emoji_roll(chat_id, game, rem, reply_to=reply_to_id)
-                        async with lock:
-                            sess["u_rolls"] += new_u
-                    async with lock:
-                        sess["turn_uid"], sess["rolling"], sess["last_action"] = sess["ub"], False, time.time()
-                        sent = await send_msg(chat_id, f"{mention(sess['ub'])}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=False), owner_id=sess["ub"], reply_to=reply_to_id)
-                        sess["prompt_msg_id"] = sent["message_id"] if sent else 0
-                elif uid == sess["ub"]:
-                    async with lock:
-                        rem = needed - len(sess["b_rolls"])
-                    if rem > 0:
-                        new_b = await send_emoji_roll(chat_id, game, rem, reply_to=reply_to_id)
-                        async with lock:
-                            sess["b_rolls"] += new_b
+                sess["rolling"] = False
+        else:
+            if uid == sess["ua"]:
+                rem = needed - len(sess["u_rolls"])
+                if rem > 0:
+                    new_u = await send_emoji_roll(chat_id, game, rem, reply_to=reply_to_id)
+                    sess["u_rolls"] += new_u
+                async with lock:
+                    if sess.get("status") != "playing":
+                        sess["rolling"] = False
+                        return
+                    sess["turn_uid"] = sess["ub"]
+                    sess["last_action"] = time.time()
+                    sess["rolling"] = False
+                    sent = await send_msg(chat_id, f"{mention(sess['ub'])}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=False), owner_id=sess["ub"], reply_to=reply_to_id)
+                    sess["prompt_msg_id"] = sent["message_id"] if sent else 0
+            elif uid == sess["ub"]:
+                rem = needed - len(sess["b_rolls"])
+                if rem > 0:
+                    new_b = await send_emoji_roll(chat_id, game, rem, reply_to=reply_to_id)
+                    sess["b_rolls"] += new_b
+                async with lock:
+                    if sess.get("status") != "playing":
+                        sess["rolling"] = False
+                        return
                     await evaluate_round(sess, reply_to_id=reply_to_id)
-        except Exception:
-            sess["rolling"], sess["last_action"] = False, time.time()
-            try:
-                sent = await send_msg(chat_id, f"{pe('⚠️')} {mention(sess['turn_uid'])}, <b>tap below to continue your turn:</b>", markup=turn_kb(sess), owner_id=sess["turn_uid"], reply_to=reply_to_id)
-                sess["prompt_msg_id"] = sent["message_id"] if sent else 0
-            except Exception:
-                pass
+                    sess["rolling"] = False
+    except Exception:
+        async with lock:
+            sess["rolling"] = False
+            sess["last_action"] = time.time()
+            if sess.get("status") == "playing":
+                try:
+                    sent = await send_msg(chat_id, f"{pe('⚠️')} {mention(sess['turn_uid'])}, <b>tap below to continue your turn:</b>", markup=turn_kb(sess), owner_id=sess["turn_uid"], reply_to=reply_to_id)
+                    sess["prompt_msg_id"] = sent["message_id"] if sent else 0
+                except Exception:
+                    pass
 
 
 # ================= BACKGROUND TIMERS =================
@@ -1447,6 +1495,34 @@ async def tip_cmd(client: Client, message: Message):
         f"{pe('💰')} <b>Amount:</b> {usd(amt)} Coins"
     )
     await send_msg(message.chat.id, text, reply_to=message.id)
+
+
+@app.on_message(filters.command("addreffer"))
+async def addreffer_cmd(client: Client, message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    if len(message.command) < 2:
+        return await send_msg(message.chat.id, "<b>Usage:</b> <code>/addreffer [amount] [@username/user_id]</code> (or reply to user)", reply_to=message.id)
+    try:
+        add_amt = int(message.command[1])
+    except ValueError:
+        return await send_msg(message.chat.id, f"{pe('❌')} <b>Invalid referral amount!</b>", reply_to=message.id)
+    if add_amt <= 0:
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Amount must be greater than 0.</b>", reply_to=message.id)
+
+    target_id, safe_name = await resolve_target_user(message, arg_index=2)
+    if not target_id:
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Reply to a user or provide a username/user ID.</b>", reply_to=message.id)
+
+    await get_or_create_user(target_id)
+    await users_db.update_one({"user_id": target_id}, {"$inc": {"weekly_referrals": add_amt}})
+    u_after = await get_or_create_user(target_id)
+    total_ref = u_after.get("weekly_referrals", 0)
+    await send_msg(
+        message.chat.id,
+        f"{pe('✅')} <b>Added {add_amt} Referrals to Referral Race!</b>\n\n{pe('👤')} <b>User:</b> <a href='tg://user?id={target_id}'>{safe_name}</a> (<code>{target_id}</code>)\n{pe('🏆')} <b>Current Weekly Referrals:</b> {total_ref}",
+        reply_to=message.id
+    )
 
 
 @app.on_message(filters.command("access"))
@@ -1972,10 +2048,9 @@ async def on_dice_received(client: Client, message: Message):
     if message.dice.emoji != emo:
         return
     val = fix_dice_value(sess["game"], raw_val)
+
     async with sess["lock"]:
-        if sess.get("status") != "playing":
-            return
-        if sess.get("rolling"):
+        if sess.get("status") != "playing" or sess.get("rolling"):
             return
         sess["last_action"] = time.time()
         sess["rolling"] = True
@@ -1994,23 +2069,34 @@ async def on_dice_received(client: Client, message: Message):
             sent = await send_msg(chat_id, f"{game_pe(sess['game'])} {mention(uid)}, <b>send {rem} more {sess['game'].title()}!</b>", markup=turn_kb(sess), owner_id=uid, reply_to=message.id)
             sess["prompt_msg_id"] = sent["message_id"] if sent else 0
             return
-    await asyncio.sleep(1.2)
-    async with sess["lock"]:
-        if sess["type"] == "bot":
-            if len(sess["b_rolls"]) < needed:
-                b_msg = await send_msg(chat_id, f"{pe('🤖')} <b>{html.escape(CASINO_NAME)}'s turn...</b>", reply_to=message.id)
-                new_b = await send_emoji_roll(chat_id, sess["game"], needed - len(sess["b_rolls"]), reply_to=b_msg["message_id"] if b_msg else message.id, is_bot=True)
-                sess["b_rolls"] += new_b
-            await evaluate_round(sess, reply_to_id=message.id)
-        else:
-            if uid == sess["ua"]:
+
+    await asyncio.sleep(1.1)
+
+    if sess["type"] == "bot":
+        if len(sess["b_rolls"]) < needed:
+            b_msg = await send_msg(chat_id, f"{pe('🤖')} <b>{html.escape(CASINO_NAME)}'s turn...</b>", reply_to=message.id)
+            new_b = await send_emoji_roll(chat_id, sess["game"], needed - len(sess["b_rolls"]), reply_to=b_msg["message_id"] if b_msg else message.id, is_bot=True)
+            sess["b_rolls"] += new_b
+        async with sess["lock"]:
+            if sess.get("status") == "playing":
+                await evaluate_round(sess, reply_to_id=message.id)
+            sess["rolling"] = False
+    else:
+        if uid == sess["ua"]:
+            async with sess["lock"]:
+                if sess.get("status") != "playing":
+                    sess["rolling"] = False
+                    return
                 sess["turn_uid"] = sess["ub"]
-                sess["rolling"] = False
                 sess["last_action"] = time.time()
+                sess["rolling"] = False
                 sent = await send_msg(chat_id, f"{mention(sess['ub'])}, <b>your turn!</b> {game_pe(sess['game'])}", markup=turn_kb(sess), owner_id=sess["ub"], reply_to=message.id)
                 sess["prompt_msg_id"] = sent["message_id"] if sent else 0
-            else:
-                await evaluate_round(sess, reply_to_id=message.id)
+        else:
+            async with sess["lock"]:
+                if sess.get("status") == "playing":
+                    await evaluate_round(sess, reply_to_id=message.id)
+                sess["rolling"] = False
 
 
 # ================= BACKGROUND TRACKERS =================
@@ -2047,7 +2133,6 @@ async def handle_join_request(client: Client, request: ChatJoinRequest):
             inviter_id = int(request.invite_link.name.split("_")[1])
             inviter_data = await get_or_create_user(inviter_id)
 
-            # If user already joined before or was already tracked in affiliates, auto-approve without counting or sending to admin
             if already_joined_before or already_tracked_in_aff or user_id in inviter_data.get("affiliates", []) or user_id in inviter_data.get("left_affiliates", []) or user_id in inviter_data.get("fake_affiliates", []):
                 try:
                     await client.approve_chat_join_request(chat_id, user_id)
@@ -2290,6 +2375,7 @@ async def adminhelp_cmd(client: Client, message: Message):
         "🔸 `/affiliatecheck [username/id]` - Check user affiliate details\n"
         "🔸 `/depo [amount] [username/id]` - Deposit real ($) or coins\n"
         "🔸 `/resetbal [username/id]` - Reset user coin balance to 0\n"
+        "🔸 `/addreffer [amount] [username/id]` - Add referrals to referral race\n"
         "🔸 `/race on` / `/race off` - Turn weekly coin race on/off\n"
         "🔸 `/refferal on` / `/refferal off` - Turn weekly referral race on/off\n"
         "🔸 `/rain [wins] [amt] [msgs] [min_coin_wager] [time]` - Start group rain\n"
@@ -2574,35 +2660,40 @@ async def affiliatecheck_cmd(client: Client, message: Message):
 @app.on_callback_query()
 async def cb_router(client: Client, call: CallbackQuery):
     cb_id = call.id
-    data = call.data
+    data = call.data or ""
     uid = call.from_user.id
     msg = call.message
-    if await check_double_msg(uid):
-        return await answer_cb(cb_id, "Please slow down...", show_alert=True)
-    if data.startswith("rain_join_") or data.startswith("aff_approve_") or data.startswith("aff_reject_"):
-        pass
-    else:
-        await answer_cb(cb_id)
     if not msg:
-        return
+        return await answer_cb(cb_id)
     chat_id = msg.chat.id
     msg_id = msg.id
     is_private = (msg.chat.type == enums.ChatType.PRIVATE)
 
+    if await check_double_cb(uid, f"{chat_id}:{msg_id}:{data}"):
+        return await answer_cb(cb_id, show_alert=False)
+
+    # Check button ownership first for owner-bound messages
+    owner = msg_owner.get((chat_id, msg_id))
+    if owner and owner != uid and not data.startswith("pvp_join:") and not data.startswith("rain_join_") and not data.startswith("aff_approve_") and not data.startswith("aff_reject_") and not data.startswith("ldb_"):
+        return await answer_cb(cb_id, "This button is not yours!", show_alert=True)
+
     # BONUS
     if data == "claim_bonus":
         now = time.time()
-        user = await get_or_create_user(uid)
-        last_claim = user.get("last_bonus_claim", 0)
+        user = await get_or_create_user(uid, call.from_user)
+        last_claim = float(user.get("last_bonus_claim", 0) or 0)
         if now - last_claim < 7200:
-            rem = 7200 - (now - last_claim)
-            mins, secs = divmod(int(rem), 60)
+            rem = int(7200 - (now - last_claim))
+            mins, secs = divmod(rem, 60)
             hrs, mins = divmod(mins, 60)
-            time_str = f"{hrs}h {mins}m" if hrs > 0 else f"{mins}m {secs}s"
-            return await answer_cb(cb_id, f"⏳ Please wait {time_str} before claiming again.", show_alert=True)
+            time_str = f"{hrs}h {mins}m {secs}s" if hrs > 0 else f"{mins}m {secs}s"
+            return await answer_cb(cb_id, f"Bonus can be claimed every 2 hours! Time left: {time_str}", show_alert=True)
         await users_db.update_one({"user_id": uid}, {"$set": {"last_bonus_claim": now}, "$inc": {"coin_balance": 1500}})
-        await answer_cb(cb_id, "🎉 1500 Coins claimed successfully!", show_alert=True)
-        return await edit_msg(chat_id, msg_id, f"{pe('✅')} <b>Bonus Claimed!</b>\n\n1,500 Coins have been added to your coin balance. Come back in 2 hours for more!", markup=kb([("Back", "menu_main", "danger", "🔙")]))
+        await answer_cb(cb_id, "Bonus claimed! +1,500 Coins added.", show_alert=True)
+        return await edit_msg(chat_id, msg_id, f"{pe('✅')} <b>Bonus Claimed!</b>\n\n1,500 Coins have been added to your coin balance. Come back in 2 hours for more!", markup=None)
+
+    if not data.startswith("rain_join_") and not data.startswith("aff_approve_") and not data.startswith("aff_reject_"):
+        await answer_cb(cb_id, show_alert=False)
 
     # AFFILIATE APPROVAL ROUTING
     if data.startswith("aff_approve_"):
@@ -2652,12 +2743,6 @@ async def cb_router(client: Client, call: CallbackQuery):
         await del_msg(chat_id, msg_id)
         return
 
-    owner = msg_owner.get((chat_id, msg_id))
-    if owner and owner != uid and not data.startswith("pvp_join:") and not data.startswith("rain_join_") and not data.startswith("aff_approve_") and not data.startswith("aff_reject_") and not data.startswith("ldb_"):
-        lang = await get_lang(uid)
-        msg_text = TR.get(lang, TR["en"]).get("not_your_btn", f"{pe('⚠️')} This is not your message!")
-        return await answer_cb(cb_id, msg_text, show_alert=True)
-
     if data.startswith("back_mode:"):
         if is_private:
             return
@@ -2691,7 +2776,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         if active_group_games >= 3:
             return await answer_cb(cb_id, "Please wait for the active games to end! Maximum 3 games allowed at once.", show_alert=True)
 
-        user = await get_or_create_user(uid)
+        user = await get_or_create_user(uid, call.from_user)
         bal = float(user.get("coin_balance", 0.0))
         if bal < stake:
             return await answer_cb(cb_id, f"Not enough coins! Current balance: {usd(bal)}", show_alert=True)
@@ -2724,7 +2809,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         if uid in busy:
             return await answer_cb(cb_id, "Finish your current game first!", show_alert=True)
 
-        user = await get_or_create_user(uid)
+        user = await get_or_create_user(uid, call.from_user)
         bal = float(user.get("coin_balance", 0.0))
         stake = sess["stake"]
         if bal < stake:
@@ -2771,7 +2856,7 @@ async def cb_router(client: Client, call: CallbackQuery):
             return
         needed = sess["match"].rolls_needed
         my_rolls = sess["u_rolls"] if uid == sess["ua"] else sess["b_rolls"]
-        if sess.get("rolling") or sess["lock"].locked() or len(my_rolls) >= needed:
+        if sess.get("rolling") or len(my_rolls) >= needed:
             return
         asyncio.create_task(handle_roll_button(sess, uid, order, reply_to_id=msg_id))
         return
@@ -2779,7 +2864,7 @@ async def cb_router(client: Client, call: CallbackQuery):
     elif data.startswith("cashout:"):
         gid = data.split(":")[1]
         sess = matches.get(gid)
-        if not sess or sess["ua"] != uid or sess.get("rolling") or sess["lock"].locked():
+        if not sess or sess["ua"] != uid or sess.get("rolling"):
             return
         cashout_amt = calc_cashout(sess["stake"], sess["match"].score[0], sess["match"].score[1], sess["target"])
         if cashout_amt <= 0:
