@@ -2150,7 +2150,7 @@ async def rain_cmd(client: Client, message: Message):
         min_turnover = float(parts[4])
         time_str = parts[5].lower()
         if winners_count <= 0 or total_amount <= 0:
-            return await message.reply_text(f"{pe('❌')} <b>Winners aur amount 0 se zyada hona chahiye.</b>")
+            return await message.reply_text(f"{pe('❌')} <b>Numbers of winners and amount is greater than 1.</b>")
 
         duration_secs = 0
         if "h" in time_str:
@@ -2164,7 +2164,7 @@ async def rain_cmd(client: Client, message: Message):
         u_doc = await get_or_create_user(uid, message.from_user)
         bal = float(u_doc.get("balance", 0.0))
         if bal < total_amount:
-            return await send_msg(message.chat.id, f"{pe('❌')} <b>Insufficient balance</b> to start rain of {usd(total_amount)}. Aapka real balance {usd(bal)} hai.", reply_to=message.id)
+            return await send_msg(message.chat.id, f"{pe('❌')} <b>Insufficient balance</b> to start rain of {usd(total_amount)}. Real balance {usd(bal)}.", reply_to=message.id)
 
         await users_db.update_one({"user_id": uid}, {"$inc": {"balance": -total_amount}})
 
@@ -2200,7 +2200,7 @@ async def resetbal_cmd(client: Client, message: Message):
         return await send_msg(message.chat.id, f"{pe('⚠️')} Usage: Reply to user ya <code>/resetbal [username/id]</code>", reply_to=message.id)
     await get_or_create_user(target_id)
     await users_db.update_one({"user_id": target_id}, {"$set": {"coin_balance": 0.0}})
-    await send_msg(message.chat.id, f"{pe('✅')} <a href='tg://user?id={target_id}'>{safe_name}</a> (<code>{target_id}</code>) ka coin balance reset karke <b>0.00</b> kar diya gaya hai.", reply_to=message.id)
+    await send_msg(message.chat.id, f"{pe('✅')} <a href='tg://user?id={target_id}'>{safe_name}</a> (<code>{target_id}</code>) Coin balance reset , <b>0.00</b> new balance.", reply_to=message.id)
 
 
 @app.on_message(filters.command("depo"))
@@ -2208,7 +2208,7 @@ async def depo_cmd(client: Client, message: Message):
     if not await is_admin(message.from_user.id):
         return
     if len(message.command) < 2:
-        return await send_msg(message.chat.id, "Usage: <code>/depo 5$ @user</code> ya <code>/depo 500 coins @user</code> (ya reply karke)", reply_to=message.id)
+        return await send_msg(message.chat.id, "Usage: <code>/depo 5$ @user</code> ya <code>/depo 500 coins @user</code> (use by reply)", reply_to=message.id)
 
     raw_first = message.command[1].strip().lower()
     is_real_usd = False
@@ -2230,11 +2230,11 @@ async def depo_cmd(client: Client, message: Message):
         return await send_msg(message.chat.id, f"{pe('❌')} <b>Invalid amount!</b> Example: <code>/depo 5$ @user</code> ya <code>/depo 500 coins @user</code>", reply_to=message.id)
 
     if amount <= 0:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Amount 0 se zyada hona chahiye.</b>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Numbers of amount is greater than 0.</b>", reply_to=message.id)
 
     target_id, safe_name = await resolve_target_user(message, arg_index=target_arg_idx)
     if not target_id:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>User ko reply karo ya username/user ID do.</b>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Reply to user or do username/user ID.</b>", reply_to=message.id)
 
     await get_or_create_user(target_id)
     if is_real_usd:
