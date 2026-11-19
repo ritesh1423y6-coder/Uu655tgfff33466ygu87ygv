@@ -46,7 +46,7 @@ OWNER_ID = 8686340235
 TRACK_GROUP_ID = -1003946482336
 REQUIRED_USERNAME_TAG = "@redcube"
 FSUB_CHANNEL = "@redcube_en"
-GROUP_INVITE_LINK = "https://t.me/+KyPLj7jfAGExNGVk"
+GROUP_INVITE_LINK = "https://t.me/+2PY5iAWv_lBhZGQ8"
 WIN_LOG_CHANNEL_ID = -1003954075033
 BANNED_PROMOS = ["@raika", "@dices", "@booplay", "@axoms", "casino"]
 CASINO_NAME = "@Redcube"
@@ -334,12 +334,12 @@ TR = {
         "verify_ok": f"{pe('✅')} <b>Верификация пройдена!</b> Ваше имя и Bio отслеживаются.",
         "verify_fail": f"{pe('❌')} <b>Ошибка верификации:</b>\nУбедитесь, что ваше имя содержит <code>{{tag}}</code>, а в Bio есть ссылка.",
         "help": f"{pe('✏️')} <b>Команды:</b>\n/start - Меню\n/lang - Сменить язык\n/verify - Верификация\n/affiliate - Реферальная ссылка\n/leaderboard - Таблица лидеров\n/bal - Баланс\n/bonus - Бесплатные монеты\n/tip - Перевод монет\n/support - Поддержка\n/close - Закрыть тикет\n/profile - Статистика",
-        "affiliate_link": f"{pe('⛓️')} <b>Ваша реферальная ссылка:</b>\n{{link}}\n\nПоделитесь ею для приглашения. Мы automatically учитываем валидных пользователей.",
+        "affiliate_link": f"{pe('⛓️')} <b>Ваша реферальная ссылка:</b>\n{{link}}\n\nПоделитесь ею для приглашения. Мы автоматически учитываем валидных пользователей.",
         "affiliate_stats": f"{pe('📊')} <b>Статистика:</b>\n{pe('👥')} Реальные: {{real}}\n{pe('❌')} Покинули: {{left}}\n{pe('🤖')} Фейки: {{fake}}\n\n{pe('💡')} Вы получаете ${{reward}} за каждых {{req}} пользователей.",
         "affiliate_disabled": f"{pe('⚠️')} <b>Партнерская система в настоящее время отключена администраторами.</b>",
         "sup_ask": f"{pe('✏️')} Пожалуйста, опишите вашу проблему в одном сообщении (Причина обращения):",
         "sup_sent": f"{pe('✅')} Ваш запрос отправлен. Номер тикета: <b>{{tkt}}</b>\nПожалуйста, подождите ответа.",
-        "sup_pending": f"{pe('⚠️')} У вас already есть активный тикет. Дождитесь его закрытия.",
+        "sup_pending": f"{pe('⚠️')} У вас уже есть активный тикет. Дождитесь его закрытия.",
         "tkt_joined": f"{pe('👨‍💻')} <b>Администратор подключился!</b>\nТеперь вы можете общаться с ним.",
         "tkt_closed": f"{pe('🔐')} <b>Ваш тикет закрыт.</b>",
         "tkt_rejected": f"{pe('❌')} <b>Ваш тикет ({{tkt}}) был отклонен администратором.</b>",
@@ -363,39 +363,39 @@ TR = {
         "not_your_btn": f"{pe('⚠️')} Это не ваше сообщение!"
     },
     "hi": {
-        "welcome_head": f"स्वागत है <b>{{name}}</b>! {pe('👋')}\n\n",
-        "welcome": f"{pe('✅')} <b>ट्रैकर बॉट में आपका स्वागत है!</b>\n\nअपने अकाउंट को वेरीफाई करने के लिए:\n1. अपने टेलीग्राम नाम में <code>{{tag}}</code> जोड़ें।\n2. अपने Bio में यह लिंक जोड़ें: {{link}}\n\nनेविगेट करने के लिए नीचे दिए गए बटन्स का उपयोग करें।",
-        "lang_set": f"{pe('✅')} भाषा हिंदी में सेट हो गई है।",
-        "verify_ok": f"{pe('✅')} <b>सत्यापन सफल!</b> आपका नाम और बायो अब ट्रैक किया जा रहा है।",
-        "verify_fail": f"{pe('❌')} <b>सत्यापन विफल:</b>\nकृपया सुनिश्चित करें कि आपके नाम में <code>{{tag}}</code> है और आपके बायो में ट्रैकिंग लिंक है।",
-        "help": f"{pe('✏️')} <b>उपलब्ध कमांड्स:</b>\n/start - मेन्यू खोलें\n/lang - भाषा बदलें\n/verify - प्रोफाइल वेरीफाई करें\n/affiliate - रेफरल लिंक प्राप्त करें\n/leaderboard - लीडरबोर्ड देखें\n/bal - बैलेंस देखें\n/bonus - बोनस क्लेम करें\n/tip - कॉइन्स टिप करें\n/support - सहायता प्राप्त करें\n/close - सक्रिय टिकट बंद करें\n/profile - स्टैट्स देखें",
-        "affiliate_link": f"{pe('⛓️')} <b>आपका पर्सनल एफिलिएट लिंक:</b>\n{{link}}\n\nयूजर्स को इनवाइट करने के लिए इसे शेयर करें।",
-        "affiliate_stats": f"{pe('📊')} <b>एफिलिएट आँकड़े:</b>\n{pe('👥')} असली इनवाइट: {{real}}\n{pe('❌')} छोड़ दिया: {{left}}\n{pe('🤖')} फेक/फ़िल्टर: {{fake}}\n\n{pe('💡')} हर {{req}} मेंबर्स पर आपको ${{reward}} मिलेंगे।",
-        "affiliate_disabled": f"{pe('⚠️')} <b>एफिलिएट सिस्टम वर्तमान में एडमिन द्वारा बंद कर दिया गया है।</b>",
-        "sup_ask": f"{pe('✏️')} कृपया अपनी समस्या एक मैसेज में लिखें (सहायता का कारण):",
-        "sup_sent": f"{pe('✅')} आपका अनुरोध एडमिन को भेज दिया गया है। टिकट नंबर: <b>{{tkt}}</b>\nकृपया प्रतीक्षा करें।",
-        "sup_pending": f"{pe('⚠️')} आपके पास पहले से ही एक सक्रिय टिकट है। कृपया इसके समाधान की प्रतीक्षा करें।",
-        "tkt_joined": f"{pe('👨‍💻')} <b>एक एडमिन चैट में शामिल हो गया है!</b>\nअब आप सीधे उनसे बात कर सकते हैं।",
-        "tkt_closed": f"{pe('🔐')} <b>आपका टिकट बंद कर दिया गया है।</b>",
-        "tkt_rejected": f"{pe('❌')} <b>आपका टिकट ({{tkt}}) एडमिन द्वारा अस्वीकार कर दिया गया है।</b>",
-        "draw_none": "अभी तक कोई ड्रा रिज़ल्ट उपलब्ध नहीं है।",
-        "draw_res": f"{pe('🎉')} <b>डेली ड्रा रिज़ल्ट</b> {pe('🎉')}\n\n{pe('⏱')} <b>समय:</b> {{time}}\n{pe('👥')} <b>कुल प्रतिभागी:</b> {{total}}\n{pe('🎁')} <b>इनाम:</b> ${{amt}} प्रत्येक\n\n{pe('🏆')} <b>विजेता:</b>\n{{winners}}",
-        "wd_addr": f"{pe('📍')} कृपया अपना {pe('💎')} TON निकासी पता भेजें:\n\n<b>उदाहरण:</b> <code>UQ...</code>",
-        "wd_rej": f"{pe('❌')} <b>निकासी अस्वीकृत!</b>\nरकम: ${{amount}}\nकारण: {{reason}}\nफंड्स वापस कर दिए गए हैं।",
-        "bonus_text": f"{pe('🎁')} <b>फ्री कॉइन बोनस</b>\n\nआप हर 2 घंटे में गेम्स खेलने के लिए 1,500 कॉइन्स क्लेम कर सकते हैं!",
-        "btn_verify": "सत्यापन",
-        "btn_affiliate": "रेफरल",
-        "btn_leaderboard": "लीडरबोर्ड",
-        "btn_draw": "ड्रा",
-        "btn_support": "सहायता",
-        "btn_language": "भाषा",
-        "btn_daily": "दैनिक",
-        "btn_weekly": "साप्ताहिक",
-        "btn_monthly": "मासिक",
-        "btn_coins": "कॉइन्स",
-        "btn_messages": "मैसेज",
-        "btn_back": "पीछे",
-        "not_your_btn": f"{pe('⚠️')} यह आपका मैसेज नहीं है!"
+        "welcome_head": f"Welcome <b>{{name}}</b>! {pe('👋')}\n\n",
+        "welcome": f"{pe('✅')} <b>Welcome to the Tracker Bot!</b>\n\nTo verify your account:\n1. Add <code>{{tag}}</code> to your Telegram Name.\n2. Add this link to your Bio: {{link}}\n\nUse the buttons below to navigate.",
+        "lang_set": f"{pe('✅')} Language set to Hindi.",
+        "verify_ok": f"{pe('✅')} <b>Verification Successful!</b> Your name and bio are now being tracked.",
+        "verify_fail": f"{pe('❌')} <b>Verification Failed:</b>\nPlease ensure your name contains <code>{{tag}}</code> and your bio has the tracking link.",
+        "help": f"{pe('✏️')} <b>Available Commands:</b>\n/start - Open Menu\n/lang - Change Language\n/verify - Verify profile\n/affiliate - Get referral link\n/leaderboard - View Activity\n/bal - Check balance\n/bonus - Claim free coins\n/tip - Tip coins to a user\n/support - Contact support\n/close - Close active ticket\n/profile - View Stats",
+        "affiliate_link": f"{pe('⛓️')} <b>Your Personal Affiliate Link:</b>\n{{link}}\n\nShare this to invite users. We automatically track valid invites.",
+        "affiliate_stats": f"{pe('📊')} <b>Affiliate Stats:</b>\n{pe('👥')} Real Invites: {{real}}\n{pe('❌')} Left Members: {{left}}\n{pe('🤖')} Fake/Filtered: {{fake}}\n\n{pe('💡')} You get ${{reward}} for every {{req}} valid members.",
+        "affiliate_disabled": f"{pe('⚠️')} <b>Affiliate system is currently disabled by admins.</b>",
+        "sup_ask": f"{pe('✏️')} Please describe your issue in a single message. (Reason for support):",
+        "sup_sent": f"{pe('✅')} Your request has been sent to the admins. Ticket Number: <b>{{tkt}}</b>\nPlease wait for an admin to accept it.",
+        "sup_pending": f"{pe('⚠️')} You already have a pending or active support ticket. Please wait until it is resolved.",
+        "tkt_joined": f"{pe('👨‍💻')} <b>An admin has joined the chat!</b>\nYou can now talk directly to them.",
+        "tkt_closed": f"{pe('🔐')} <b>Your ticket has been closed.</b>",
+        "tkt_rejected": f"{pe('❌')} <b>Your ticket ({{tkt}}) has been rejected by an admin.</b>",
+        "draw_none": "No draw results available yet.",
+        "draw_res": f"{pe('🎉')} <b>DAILY DRAW RESULTS</b> {pe('🎉')}\n\n{pe('⏱')} <b>Time:</b> {{time}}\n{pe('👥')} <b>Total Participants:</b> {{total}}\n{pe('🎁')} <b>Prize:</b> ${{amt}} each\n\n{pe('🏆')} <b>Winners:</b>\n{{winners}}",
+        "wd_addr": f"{pe('📍')} Please send your {pe('💎')} TON withdrawal address:\n\n<b>Example:</b> <code>UQ...</code>",
+        "wd_rej": f"{pe('❌')} <b>Withdrawal Rejected!</b>\nAmount: ${{amount}}\nReason: {{reason}}\nFunds refunded.",
+        "bonus_text": f"{pe('🎁')} <b>Free Coin Bonus</b>\n\nYou can claim 1,500 Coins every 2 hours to play games for free!",
+        "btn_verify": "Verify",
+        "btn_affiliate": "Affiliate",
+        "btn_leaderboard": "Leaderboard",
+        "btn_draw": "Draw",
+        "btn_support": "Support",
+        "btn_language": "Language",
+        "btn_daily": "Daily",
+        "btn_weekly": "Weekly",
+        "btn_monthly": "Monthly",
+        "btn_coins": "Coins",
+        "btn_messages": "Messages",
+        "btn_back": "Back",
+        "not_your_btn": f"{pe('⚠️')} This is not your message!"
     }
 }
 
@@ -439,6 +439,8 @@ async def get_lang(user_id):
         return user_langs[user_id]
     user = await users_db.find_one({"user_id": user_id})
     l = user.get("lang", "en") if user else "en"
+    if l not in TR:
+        l = "en"
     user_langs[user_id] = l
     return l
 
@@ -1266,7 +1268,7 @@ async def background_verification_check():
                         if lang == "ru":
                             msg = f"{pe('⚠️')} <b>Внимание:</b> Вы удалили тег из имени или ссылку из Bio! Ваша верификация аннулирована. Пожалуйста, верните их и отправьте /verify."
                         elif lang == "hi":
-                            msg = f"{pe('⚠️')} <b>चेतावनी:</b> आपने नाम से टैग या बायो से लिंक हटा दिया है! आपका सत्यापन रद्द कर दिया गया है। कृपया उन्हें वापस जोड़ें और /verify भेजें।"
+                            msg = f"{pe('⚠️')} <b>Warning:</b> You have removed the required name tag or bio link! Your verification is revoked and you are disqualified from upcoming draws. Please add them back and send /verify."
                         try:
                             await send_msg(u["user_id"], msg)
                         except:
@@ -1323,9 +1325,9 @@ async def lang_cmd(client: Client, message: Message):
         return
     btns = kb(
         [("English", "lang_en", "primary", "🇬🇧"), ("Русский", "lang_ru", "danger", "🇷🇺")],
-        [("हिंदी (Hindi)", "lang_hi", "success", "🇮🇳")]
+        [("Hindi", "lang_hi", "success", "🇮🇳")]
     )
-    await send_msg(message.chat.id, "Select your language / Выберите язык / भाषा चुनें:", markup=btns, reply_to=message.id)
+    await send_msg(message.chat.id, "Select your language / Выберите язык / Choose language:", markup=btns, reply_to=message.id)
 
 
 @app.on_message(filters.command(["anonymous", "announumus"]) & filters.private)
@@ -1343,9 +1345,9 @@ async def anonymous_cmd(client: Client, message: Message):
     await users_db.update_one({"user_id": uid}, {"$set": {"anonymous": new_status}})
 
     if new_status:
-        await send_msg(message.chat.id, f"{pe('✅')} <b>Anonymous Mode ON.</b>\nAb Win log me aapka naam 'Anonymous' show hoga.", reply_to=message.id)
+        await send_msg(message.chat.id, f"{pe('✅')} <b>Anonymous Mode ON.</b>\nYour name will now be shown as 'Anonymous' in win logs.", reply_to=message.id)
     else:
-        await send_msg(message.chat.id, f"{pe('❌')} <b>Anonymous Mode OFF.</b>\nAb Win log me aapka real naam show hoga.", reply_to=message.id)
+        await send_msg(message.chat.id, f"{pe('❌')} <b>Anonymous Mode OFF.</b>\nYour real name will now be shown in win logs.", reply_to=message.id)
 
 
 @app.on_message(filters.command(["profile", "stats"]))
@@ -1412,7 +1414,7 @@ async def tip_cmd(client: Client, message: Message):
 
     sender_id = message.from_user.id
     if len(message.command) < 2:
-        return await send_msg(message.chat.id, f"<b>Usage:</b> <code>/tip 100</code> (reply) ya <code>/tip 100 @username</code>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"<b>Usage:</b> <code>/tip 100</code> (reply) or <code>/tip 100 @username</code>", reply_to=message.id)
 
     try:
         amt = round(float(message.command[1]), 2)
@@ -1420,18 +1422,18 @@ async def tip_cmd(client: Client, message: Message):
         return await send_msg(message.chat.id, f"{pe('❌')} <b>Invalid coin amount.</b>", reply_to=message.id)
 
     if amt <= 0:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Tip amount 0 se zyada hona chahiye.</b>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Tip amount must be greater than 0.</b>", reply_to=message.id)
 
     target_id, safe_target_name = await resolve_target_user(message, arg_index=2)
     if not target_id:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>User ko reply karo ya username/user ID do.</b>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Reply to a user or provide a username/user ID.</b>", reply_to=message.id)
 
     if target_id == sender_id:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Aap khud ko tip nahi kar sakte.</b>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>You cannot tip yourself.</b>", reply_to=message.id)
 
     sender_doc = await get_or_create_user(sender_id, message.from_user)
     if float(sender_doc.get("coin_balance", 0.0)) < amt:
-        return await send_msg(message.chat.id, f"{pe('❌')} <b>Insufficient coin balance!</b>\nAapke paas {usd(float(sender_doc.get('coin_balance', 0.0)))} coins hain.", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('❌')} <b>Insufficient coin balance!</b>\nYou have {usd(float(sender_doc.get('coin_balance', 0.0)))} coins.", reply_to=message.id)
 
     await get_or_create_user(target_id)
     await users_db.update_one({"user_id": sender_id}, {"$inc": {"coin_balance": -amt}})
@@ -2025,6 +2027,16 @@ async def handle_join_request(client: Client, request: ChatJoinRequest):
         return
     conf = await get_config()
     if chat_id == TRACK_GROUP_ID:
+        joining_user = await get_or_create_user(user_id, request.from_user)
+        already_joined_before = bool(joining_user.get("ever_joined_group", False))
+        already_tracked_in_aff = await users_db.find_one({
+            "$or": [
+                {"affiliates": user_id},
+                {"left_affiliates": user_id},
+                {"fake_affiliates": user_id}
+            ]
+        }) is not None
+
         if request.invite_link and request.invite_link.name and request.invite_link.name.startswith("Affiliate_"):
             if not conf.get("affiliate_enabled", True):
                 try:
@@ -2034,7 +2046,14 @@ async def handle_join_request(client: Client, request: ChatJoinRequest):
                 return
             inviter_id = int(request.invite_link.name.split("_")[1])
             inviter_data = await get_or_create_user(inviter_id)
-            if user_id not in inviter_data.get("affiliates", []) and user_id not in inviter_data.get("left_affiliates", []):
+
+            # If user already joined before or was already tracked in affiliates, auto-approve without counting or sending to admin
+            if already_joined_before or already_tracked_in_aff or user_id in inviter_data.get("affiliates", []) or user_id in inviter_data.get("left_affiliates", []) or user_id in inviter_data.get("fake_affiliates", []):
+                try:
+                    await client.approve_chat_join_request(chat_id, user_id)
+                except Exception:
+                    pass
+            else:
                 safe_name = html.escape(f"{request.from_user.first_name or ''} {request.from_user.last_name or ''}".strip())
                 admin_text = f"{pe('👥')} <b>New Affiliate Join Request</b>\n\n" \
                              f"<b>User:</b> <a href='tg://user?id={user_id}'>{safe_name}</a> (<code>{user_id}</code>)\n" \
@@ -2051,11 +2070,6 @@ async def handle_join_request(client: Client, request: ChatJoinRequest):
                         }
                 except Exception as e:
                     print(f"Failed to send affiliate approval to admin: {e}")
-            else:
-                try:
-                    await client.approve_chat_join_request(chat_id, user_id)
-                except Exception:
-                    pass
         else:
             try:
                 await client.approve_chat_join_request(chat_id, user_id)
@@ -2197,10 +2211,10 @@ async def resetbal_cmd(client: Client, message: Message):
         return
     target_id, safe_name = await resolve_target_user(message, arg_index=1)
     if not target_id:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} Usage: Reply to user ya <code>/resetbal [username/id]</code>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} Usage: Reply to user or <code>/resetbal [username/id]</code>", reply_to=message.id)
     await get_or_create_user(target_id)
     await users_db.update_one({"user_id": target_id}, {"$set": {"coin_balance": 0.0}})
-    await send_msg(message.chat.id, f"{pe('✅')} <a href='tg://user?id={target_id}'>{safe_name}</a> (<code>{target_id}</code>) Coin balance reset , <b>0.00</b> new balance.", reply_to=message.id)
+    await send_msg(message.chat.id, f"{pe('✅')} <a href='tg://user?id={target_id}'>{safe_name}</a> (<code>{target_id}</code>) Coin balance reset, <b>0.00</b> new balance.", reply_to=message.id)
 
 
 @app.on_message(filters.command("depo"))
@@ -2208,7 +2222,7 @@ async def depo_cmd(client: Client, message: Message):
     if not await is_admin(message.from_user.id):
         return
     if len(message.command) < 2:
-        return await send_msg(message.chat.id, "Usage: <code>/depo 5$ @user</code> ya <code>/depo 500 coins @user</code> (use by reply)", reply_to=message.id)
+        return await send_msg(message.chat.id, "Usage: <code>/depo 5$ @user</code> or <code>/depo 500 coins @user</code> (use by reply)", reply_to=message.id)
 
     raw_first = message.command[1].strip().lower()
     is_real_usd = False
@@ -2227,14 +2241,14 @@ async def depo_cmd(client: Client, message: Message):
     try:
         amount = round(float(amt_str), 2)
     except ValueError:
-        return await send_msg(message.chat.id, f"{pe('❌')} <b>Invalid amount!</b> Example: <code>/depo 5$ @user</code> ya <code>/depo 500 coins @user</code>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('❌')} <b>Invalid amount!</b> Example: <code>/depo 5$ @user</code> or <code>/depo 500 coins @user</code>", reply_to=message.id)
 
     if amount <= 0:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Numbers of amount is greater than 0.</b>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Amount must be greater than 0.</b>", reply_to=message.id)
 
     target_id, safe_name = await resolve_target_user(message, arg_index=target_arg_idx)
     if not target_id:
-        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Reply to user or do username/user ID.</b>", reply_to=message.id)
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Reply to user or provide username/user ID.</b>", reply_to=message.id)
 
     await get_or_create_user(target_id)
     if is_real_usd:
@@ -2600,12 +2614,12 @@ async def cb_router(client: Client, call: CallbackQuery):
             await client.approve_chat_join_request(target_chat, user_id)
             conf = await get_config()
             await users_db.update_one({"user_id": inviter_id}, {"$addToSet": {"affiliates": user_id}})
+            await users_db.update_one({"user_id": user_id}, {"$set": {"ever_joined_group": True}}, upsert=True)
             inviter_data = await get_or_create_user(inviter_id)
             new_count = len(inviter_data.get("affiliates", [])) + 1
             if new_count % conf["affiliate_req"] == 0:
                 reward = conf["affiliate_reward"]
                 await users_db.update_one({"user_id": inviter_id}, {"$inc": {"balance": reward}})
-                lang = await get_lang(inviter_id)
                 reward_msg = f"{pe('🎉')} <b>Congratulations!</b> You reached {conf['affiliate_req']} members. ${reward} added!"
                 try:
                     await send_msg(inviter_id, reward_msg)
@@ -2866,13 +2880,15 @@ async def cb_router(client: Client, call: CallbackQuery):
         if not await pass_fsub(client, call):
             return
         lang = await get_lang(uid)
-        btns = kb([("English", "lang_en", "primary", "🇬🇧"), ("Русский", "lang_ru", "danger", "🇷🇺")], [("हिंदी (Hindi)", "lang_hi", "success", "🇮🇳")], [(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
-        await edit_msg(chat_id, msg_id, "Select your language / Выберите язык / भाषा चुनें:", markup=btns)
+        btns = kb([("English", "lang_en", "primary", "🇬🇧"), ("Русский", "lang_ru", "danger", "🇷🇺")], [("Hindi", "lang_hi", "success", "🇮🇳")], [(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
+        await edit_msg(chat_id, msg_id, "Select your language / Выберите язык / Choose language:", markup=btns)
 
     elif data.startswith("lang_"):
         if not await pass_fsub(client, call):
             return
         new_lang = data.split("_")[1]
+        if new_lang not in TR:
+            new_lang = "en"
         await users_db.update_one({"user_id": uid}, {"$set": {"lang": new_lang}})
         user_langs[uid] = new_lang
         user = await get_or_create_user(uid, call.from_user)
