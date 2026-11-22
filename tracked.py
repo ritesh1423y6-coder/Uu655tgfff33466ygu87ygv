@@ -4167,7 +4167,6 @@ async def main():
     me = await app.get_me()
     BOT_USERNAME = me.username or ""
     await tg("setMyCommands", commands=[
-        await tg("setMyCommands", commands=[
         {"command": "start", "description": "Open Main Menu"},
         {"command": "help", "description": "List all commands"},
         {"command": "verify", "description": "Verify Telegram name and bio"},
