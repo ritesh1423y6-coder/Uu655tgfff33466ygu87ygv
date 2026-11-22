@@ -4309,6 +4309,11 @@ async def main():
         asyncio.create_task(giveaway_countdown_task(gw["_id"]))
 
     print(f"Bot @{BOT_USERNAME} started successfully.")
+    try:
+    info = await tg("getMe")
+    print("Telegram API OK:", info.get("username"))
+except Exception as e:
+    print("Telegram API ERROR:", e)
     await idle()
     await app.stop()
     if HTTP_SESSION and not HTTP_SESSION.closed:
