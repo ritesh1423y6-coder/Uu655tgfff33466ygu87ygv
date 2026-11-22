@@ -63,6 +63,8 @@ user_names: dict[int, str] = {}
 auth_groups_cache: set[int] = set()
 mines_sessions = {}
 pending_join_requests: dict[int, dict] = {}
+giveaway_wizard: dict[int, dict] = {}
+giveaway_captcha_sessions: dict[tuple[int, str], dict] = {}
 
 # ================= PREMIUM EMOJIS DATA =================
 PREMIUM_EMOJIS = {
@@ -137,6 +139,12 @@ def calc_mines_mult(mines, hits):
     for i in range(hits):
         mult *= (25.0 - i) / (25.0 - mines - i)
     return round(mult, 2)
+
+
+def calc_bonus_coins(ref_count: int) -> int:
+    if ref_count < 2:
+        return 0
+    return 1500 + (ref_count - 2) * 75
 
 
 def mention(uid: int, name: str = None) -> str:
@@ -276,6 +284,7 @@ activity_db = db['activity']
 auth_groups_db = db['authorized_groups']
 rain_db = db['rain_events']
 games_db = db['games']
+giveaways_db = db['giveaways']
 
 user_states = {}
 active_tickets = {}
@@ -313,7 +322,7 @@ TR = {
         "draw_res": f"{pe('🎉')} <b>DAILY DRAW RESULTS</b> {pe('🎉')}\n\n{pe('⏱')} <b>Time:</b> {{time}}\n{pe('👥')} <b>Total Participants:</b> {{total}}\n{pe('🎁')} <b>Prize:</b> ${{amt}} each\n\n{pe('🏆')} <b>Winners:</b>\n{{winners}}",
         "wd_addr": f"{pe('📍')} Please send your {pe('💎')} TON withdrawal address:\n\n<b>Example:</b> <code>UQ...</code>",
         "wd_rej": f"{pe('❌')} <b>Withdrawal Rejected!</b>\nAmount: ${{amount}}\nReason: {{reason}}\nFunds refunded.",
-        "bonus_text": f"{pe('🎁')} <b>Free Coin Bonus</b>\n\nYou can claim 1,500 Coins every 2 hours to play games for free!",
+        "bonus_text": f"{pe('🎁')} <b>Free Coin Bonus</b>\n\nAdd at least <b>2 Referrals</b> via your affiliate link to receive the bonus!\n• 2 Referrals = <b>1,500 Coins</b>\n• More referrals = <b>More Coins</b>\n• Cooldown: <b>Every 2 hours</b> (bonus referral counter resets after claiming)",
         "btn_verify": "Verify",
         "btn_affiliate": "Affiliate",
         "btn_leaderboard": "Leaderboard",
@@ -348,7 +357,7 @@ TR = {
         "draw_res": f"{pe('🎉')} <b>РЕЗУЛЬТАТЫ РОЗЫГРЫША</b> {pe('🎉')}\n\n{pe('⏱')} <b>Время:</b> {{time}}\n{pe('👥')} <b>Участников:</b> {{total}}\n{pe('🎁')} <b>Приз:</b> ${{amt}} каждому\n\n{pe('🏆')} <b>Победители:</b>\n{{winners}}",
         "wd_addr": f"{pe('📍')} Пожалуйста, отправьте ваш адрес {pe('💎')} TON:\n\n<b>Пример:</b> <code>UQ...</code>",
         "wd_rej": f"{pe('❌')} <b>Вывод отклонен!</b>\nСумма: ${{amount}}\nПричина: {{reason}}\nСредства возвращены.",
-        "bonus_text": f"{pe('🎁')} <b>Бесплатный бонус</b>\n\nПолучайте 1,500 Монет каждые 2 часа для игр!",
+        "bonus_text": f"{pe('🎁')} <b>Бесплатный бонус</b>\n\nДобавьте минимум <b>2 реферала</b> по вашей реферальной ссылке для получения бонуса!\n• 2 реферала = <b>1,500 монет</b>\n• Больше рефералов = <b>Больше монет</b>\n• Таймер: <b>Каждые 2 часа</b> (счетчик бонусных рефералов сбрасывается после получения)",
         "btn_verify": "Проверить",
         "btn_affiliate": "Реферал",
         "btn_leaderboard": "Таблица",
@@ -383,7 +392,7 @@ TR = {
         "draw_res": f"{pe('🎉')} <b>DAILY DRAW RESULTS</b> {pe('🎉')}\n\n{pe('⏱')} <b>Time:</b> {{time}}\n{pe('👥')} <b>Total Participants:</b> {{total}}\n{pe('🎁')} <b>Prize:</b> ${{amt}} each\n\n{pe('🏆')} <b>Winners:</b>\n{{winners}}",
         "wd_addr": f"{pe('📍')} Please send your {pe('💎')} TON withdrawal address:\n\n<b>Example:</b> <code>UQ...</code>",
         "wd_rej": f"{pe('❌')} <b>Withdrawal Rejected!</b>\nAmount: ${{amount}}\nReason: {{reason}}\nFunds refunded.",
-        "bonus_text": f"{pe('🎁')} <b>Free Coin Bonus</b>\n\nYou can claim 1,500 Coins every 2 hours to play games for free!",
+        "bonus_text": f"{pe('🎁')} <b>Free Coin Bonus</b>\n\nBonus lene ke liye kam se kam <b>2 Referrals</b> (affiliate link se) add karein!\n• 2 Referrals = <b>1,500 Coins</b>\n• Zyada referrals = <b>Zyada Coins</b>\n• Timer: <b>Har 2 ghante</b> (claim ke baad bonus referral count 0 se shuru hoga)",
         "btn_verify": "Verify",
         "btn_affiliate": "Affiliate",
         "btn_leaderboard": "Leaderboard",
@@ -498,7 +507,7 @@ async def get_or_create_user(user_id, user_obj=None):
             "ever_joined_group": False, "wagered": 0.0, "coin_wagered": 0.0, "coin_won": 0.0,
             "daily_coin_wagered": 0.0, "weekly_coin_wagered": 0.0, "last_wager_date": "",
             "total_deposited": 0.0, "total_withdrawn": 0.0, "last_bonus_claim": 0,
-            "weekly_referrals": 0
+            "bonus_ref_offset": 0, "weekly_referrals": 0
         }
         await users_db.insert_one(user)
     elif user_obj and (user.get("name") != name or user.get("name") == "User"):
@@ -904,6 +913,221 @@ def get_mines_board_kb(uid, reveal=False, explode_idx=-1):
     return {"inline_keyboard": board}
 
 
+# ================= GIVEAWAY HELPERS =================
+def parse_duration_seconds(time_str: str) -> int:
+    s = time_str.strip().lower()
+    if s.endswith("d"):
+        return max(10, int(float(s[:-1]) * 86400))
+    if s.endswith("h"):
+        return max(10, int(float(s[:-1]) * 3600))
+    if s.endswith("m"):
+        return max(10, int(float(s[:-1]) * 60))
+    if s.endswith("s"):
+        return max(10, int(float(s[:-1])))
+    return max(10, int(float(s) * 60))
+
+
+def format_duration_left(end_time: float) -> str:
+    rem = max(0, int(end_time - time.time()))
+    days, rem_sec = divmod(rem, 86400)
+    hours, rem_sec = divmod(rem_sec, 3600)
+    minutes, seconds = divmod(rem_sec, 60)
+    if days > 0:
+        return f"in {days}d {hours}h {minutes}m"
+    if hours > 0:
+        return f"in {hours}h {minutes}m {seconds}s"
+    return f"in {minutes}m {seconds}s"
+
+
+def build_giveaway_post_text(gw: dict) -> str:
+    title = html.escape(str(gw.get("title", "GIVEAWAY")))
+    amount = html.escape(str(gw.get("amount", "")))
+    host = html.escape(str(gw.get("host", "")))
+    entries_count = len(gw.get("participants", []))
+    time_left = format_duration_left(gw.get("end_time", time.time()))
+
+    lines = [
+        f"🎉 <b>{title}</b> 🎉",
+        f"💰 <b>Prize Pool:</b> {amount}",
+        f"Hosted By: {host}",
+        "",
+        "Giveaway Conditions:"
+    ]
+    f_chan = gw.get("force_channel")
+    f_grp = gw.get("force_group")
+    if f_chan:
+        lines.append(f"• Must be a member of {html.escape(f_chan)}")
+    if f_grp:
+        lines.append(f"• Must be a member of the group")
+    if gw.get("cond_name"):
+        lines.append(f"• Name must contain <code>{html.escape(REQUIRED_USERNAME_TAG)}</code>")
+    if gw.get("cond_bio"):
+        lines.append(f"• Bio must contain group link (<code>{html.escape(GROUP_INVITE_LINK)}</code>)")
+    if gw.get("cond_premium"):
+        lines.append("• Only Telegram Premium users")
+    if not any([f_chan, f_grp, gw.get("cond_name"), gw.get("cond_bio"), gw.get("cond_premium")]):
+        lines.append("• Open to eligible group members")
+
+    min_msgs = gw.get("min_messages", 0)
+    notes = (gw.get("notes") or "").strip()
+    if min_msgs and int(min_msgs) > 0:
+        lines.extend([
+            "",
+            "Bonus Entries:",
+            f"Active in English chats min message: {int(min_msgs)}"
+        ])
+        if notes:
+            lines.append(html.escape(notes))
+    elif notes:
+        lines.extend([
+            "",
+            "Bonus Entries:",
+            html.escape(notes)
+        ])
+
+    lines.extend([
+        "",
+        f"Entries: {entries_count}",
+        f"Giveaway Ends In: {time_left}",
+        "",
+        "To participate in the giveaway, press the button below!"
+    ])
+    return "\n".join(lines)
+
+
+def build_giveaway_wizard_conditions_ui(uid: int, gw: dict):
+    c_name = "✅ Name @redcube" if gw.get("cond_name") else "⬜ Name @redcube"
+    c_bio = "✅ Bio Group Link" if gw.get("cond_bio") else "⬜ Bio Group Link"
+    c_prem = "✅ Only Premium" if gw.get("cond_premium") else "⬜ Only Premium"
+    c_msg = f"✅ Min Msg ({gw['min_messages']})" if gw.get("min_messages") else "⬜ Min Msg in Group"
+    c_cap = "✅ Captcha: ON" if gw.get("captcha", True) else "⬜ Captcha: OFF"
+
+    text = (
+        f"⚙️ <b>Giveaway Conditions Setup</b>\n\n"
+        f"Toggle conditions below (green/checked = ON, default = OFF):\n"
+        f"• Name required (<code>{REQUIRED_USERNAME_TAG}</code>): <b>{'ON' if gw.get('cond_name') else 'OFF'}</b>\n"
+        f"• Bio required (Group link): <b>{'ON' if gw.get('cond_bio') else 'OFF'}</b>\n"
+        f"• Only Premium users: <b>{'ON' if gw.get('cond_premium') else 'OFF'}</b>\n"
+        f"• Min message in group: <b>{gw.get('min_messages') or 'OFF'}</b>\n"
+        f"• Captcha check: <b>{'ON' if gw.get('captcha', True) else 'OFF'}</b>\n\n"
+        f"Click <b>Next (Notes)</b> when ready."
+    )
+    markup = kb(
+        [(c_name, "gw_toggle_name", "success" if gw.get("cond_name") else "primary"),
+         (c_bio, "gw_toggle_bio", "success" if gw.get("cond_bio") else "primary")],
+        [(c_prem, "gw_toggle_prem", "success" if gw.get("cond_premium") else "primary"),
+         (c_msg, "gw_ask_minmsg", "success" if gw.get("min_messages") else "primary")],
+        [(c_cap, "gw_toggle_cap", "success" if gw.get("captcha", True) else "primary")],
+        [("Next: Notes ➡️", "gw_to_notes", "success"), ("Back", "gw_start_new", "danger")]
+    )
+    return text, markup
+
+
+async def update_giveaway_wizard_msg(uid: int, text: str, markup=None):
+    wiz = giveaway_wizard.get(uid)
+    if not wiz:
+        return
+    chat_id = wiz.get("dm_chat_id", uid)
+    msg_id = wiz.get("wizard_msg_id")
+    if msg_id:
+        res = await edit_msg(chat_id, msg_id, text, markup=markup, owner_id=uid)
+        if res and "message_id" in res:
+            wiz["wizard_msg_id"] = res["message_id"]
+            msg_owner[(chat_id, res["message_id"])] = uid
+    else:
+        res = await send_msg(chat_id, text, markup=markup, owner_id=uid)
+        if res and "message_id" in res:
+            wiz["wizard_msg_id"] = res["message_id"]
+
+
+async def giveaway_countdown_task(gw_id: str):
+    while True:
+        await asyncio.sleep(20)
+        gw = await giveaways_db.find_one({"_id": gw_id, "status": "active"})
+        if not gw:
+            break
+        now = time.time()
+        end_time = gw.get("end_time", now)
+        post_text = build_giveaway_post_text(gw)
+        post_kb = kb([("Enter giveaway", f"gw_enter:{gw_id}", "success")])
+
+        for loc in gw.get("posts", []):
+            l_chat = loc["chat_id"]
+            l_msg = loc["message_id"]
+            has_photo = loc.get("has_photo", False)
+            try:
+                if has_photo:
+                    await tg("editMessageCaption", chat_id=l_chat, message_id=l_msg, caption=post_text, reply_markup=post_kb, parse_mode="HTML")
+                else:
+                    await tg("editMessageText", chat_id=l_chat, message_id=l_msg, text=post_text, reply_markup=post_kb, parse_mode="HTML", disable_web_page_preview=True)
+            except Exception:
+                pass
+
+        if now >= end_time:
+            await finalize_giveaway(gw_id)
+            break
+
+
+async def finalize_giveaway(gw_id: str):
+    gw = await giveaways_db.find_one({"_id": gw_id, "status": "active"})
+    if not gw:
+        return
+    await giveaways_db.update_one({"_id": gw_id}, {"$set": {"status": "ended"}})
+
+    participants = gw.get("participants", [])
+    target_chat = gw.get("target_chat_id", TRACK_GROUP_ID)
+    winner_uid = None
+    winner_name = "No Winner"
+
+    if participants:
+        # Pick active users in group first
+        today = str(datetime.date.today())
+        week_ago = str(datetime.date.today() - datetime.timedelta(days=7))
+        act_docs = await activity_db.aggregate([
+            {"$match": {"user_id": {"$in": participants}, "group_id": target_chat, "date": {"$gte": week_ago}}},
+            {"$group": {"_id": "$user_id", "total": {"$sum": "$message_count"}}}
+        ]).to_list(length=None)
+        act_map = {d["_id"]: d["total"] for d in act_docs}
+        active_candidates = [u for u in participants if act_map.get(u, 0) > 0]
+        pool = active_candidates if active_candidates else participants
+        weights = [1 + act_map.get(u, 0) for u in pool]
+        winner_uid = random.choices(pool, weights=weights, k=1)[0]
+        u_doc = await users_db.find_one({"user_id": winner_uid})
+        winner_name = html.escape(await fetch_real_name(winner_uid, u_doc.get("name") if u_doc else None))
+
+    title = html.escape(str(gw.get("title", "GIVEAWAY")))
+    amount = html.escape(str(gw.get("amount", "")))
+    if winner_uid:
+        end_text = (
+            f"🎉 <b>{title} ENDED!</b> 🎉\n\n"
+            f"💰 <b>Prize Pool:</b> {amount}\n"
+            f"🏆 <b>Winner:</b> <a href='tg://user?id={winner_uid}'>{winner_name}</a> (<code>{winner_uid}</code>)\n"
+            f"👥 <b>Total Entries:</b> {len(participants)}"
+        )
+        try:
+            await send_msg(winner_uid, f"🎉 <b>Congratulations!</b> You won <b>{amount}</b> in giveaway <b>{title}</b>!")
+        except Exception:
+            pass
+    else:
+        end_text = (
+            f"🎉 <b>{title} ENDED!</b> 🎉\n\n"
+            f"💰 <b>Prize Pool:</b> {amount}\n"
+            f"❌ <b>No eligible participants entered!</b>"
+        )
+
+    for loc in gw.get("posts", []):
+        l_chat = loc["chat_id"]
+        l_msg = loc["message_id"]
+        has_photo = loc.get("has_photo", False)
+        try:
+            if has_photo:
+                await tg("editMessageCaption", chat_id=l_chat, message_id=l_msg, caption=end_text, reply_markup=None, parse_mode="HTML")
+            else:
+                await tg("editMessageText", chat_id=l_chat, message_id=l_msg, text=end_text, reply_markup=None, parse_mode="HTML", disable_web_page_preview=True)
+        except Exception:
+            pass
+
+
 # ================= MATCH ENGINE =================
 async def finish_match(sess: dict, payout_a: float, payout_b: float = 0.0, cashed_out: bool = False, reply_to_id: int = None):
     gid = sess["gid"]
@@ -1116,7 +1340,6 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
 
 # ================= BACKGROUND TIMERS =================
 async def weekly_race_timer_task():
-    """Runs a 7-day (7 * 24 * 3600 seconds) timer when race is toggled ON, then auto-offs and notifies admins/group."""
     while True:
         await asyncio.sleep(5)
         conf = await get_config()
@@ -1173,7 +1396,6 @@ async def weekly_race_timer_task():
 
 
 async def weekly_refferal_race_timer_task():
-    """Runs a 7-day (7 * 24 * 3600 seconds) timer when Referral Race is ON, then auto-offs and rewards top referrers."""
     while True:
         await asyncio.sleep(5)
         conf = await get_config()
@@ -1375,7 +1597,7 @@ async def lang_cmd(client: Client, message: Message):
         [("English", "lang_en", "primary", "🇬🇧"), ("Русский", "lang_ru", "danger", "🇷🇺")],
         [("Hindi", "lang_hi", "success", "🇮🇳")]
     )
-    await send_msg(message.chat.id, "Select your language / Выберите язык / Choose language:", markup=btns, reply_to=message.id)
+    sent = await send_msg(message.chat.id, "Select your language / Выберите язык / Choose language:", markup=btns, reply_to=message.id, owner_id=message.from_user.id)
 
 
 @app.on_message(filters.command(["anonymous", "announumus"]) & filters.private)
@@ -1445,10 +1667,10 @@ async def bonus_cmd(client: Client, message: Message):
         return
     lang = await get_lang(message.from_user.id)
     text = TR.get(lang, TR["en"]).get("bonus_text", TR["en"]["bonus_text"])
-    markup_btns = [[btn(" Claim Bonus", "claim_bonus", style="success")]]
+    markup_btns = [[btn("Claim Bonus", "claim_bonus", style="success")]]
     if is_private:
         markup_btns.append([btn(TR[lang]["btn_back"], "menu_main", style="danger", icon="🔙")])
-    await send_msg(message.chat.id, text, markup={"inline_keyboard": markup_btns}, reply_to=message.id)
+    await send_msg(message.chat.id, text, markup={"inline_keyboard": markup_btns}, reply_to=message.id, owner_id=message.from_user.id)
 
 
 @app.on_message(filters.command("tip"))
@@ -1572,7 +1794,7 @@ async def start_cmd(client: Client, message: Message):
     await send_msg(message.chat.id, welcome_head, reply_to=message.id)
     await asyncio.sleep(0.3)
     welcome_body = TR[lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get('bio_link', 'No Link Generated'))
-    await send_msg(message.chat.id, welcome_body, markup=get_main_menu(lang), disable_web_page_preview=True)
+    await send_msg(message.chat.id, welcome_body, markup=get_main_menu(lang), disable_web_page_preview=True, owner_id=message.from_user.id)
     if await is_admin(message.from_user.id):
         await send_msg(message.chat.id, f"{pe('🛡')} <b>Admin Access Recognized!</b> Send /adminhelp to see your commands.")
 
@@ -1634,7 +1856,7 @@ async def affiliate_cmd(client: Client, message: Message):
         [("Affiliate Status", "menu_aff_stats", "primary", "📊")],
         [(TR[lang]["btn_back"], "menu_main", "danger", "🔙")]
     )
-    await send_msg(message.chat.id, TR[lang]["affiliate_link"].format(link=invite_link), markup=markup, reply_to=message.id)
+    await send_msg(message.chat.id, TR[lang]["affiliate_link"].format(link=invite_link), markup=markup, reply_to=message.id, owner_id=message.from_user.id)
 
 
 @app.on_message(filters.command("draw") & filters.private)
@@ -1679,7 +1901,7 @@ async def leaderboard_cmd(client: Client, message: Message):
     text = await generate_new_leaderboard("message")
     row1 = [(tr["btn_coins"], "ldb_coins", "primary", "🪙"), (tr["btn_messages"], "ldb_messages", "success", "💬")]
     btns = kb(row1, [(tr["btn_back"], "menu_main", "danger", "🔙")]) if is_private else kb(row1)
-    await send_msg(message.chat.id, text, markup=btns, disable_web_page_preview=True, reply_to=message.id)
+    await send_msg(message.chat.id, text, markup=btns, disable_web_page_preview=True, reply_to=message.id, owner_id=message.from_user.id)
 
 
 @app.on_message(filters.command(["rank", "myrank"]))
@@ -1772,7 +1994,7 @@ async def withdraw_cmd(client: Client, message: Message):
         [("Redcube Wallet", "wd_method_redcube", "success", "🏦")],
         [(TR[lang]["btn_back"], "menu_main", "danger", "🔙")]
     )
-    await send_msg(message.chat.id, f"{pe('💰')} <b>Withdrawable Balance:</b> {usd(bal)}\n\nPlease select the withdrawal method:", markup=markup, reply_to=message.id)
+    await send_msg(message.chat.id, f"{pe('💰')} <b>Withdrawable Balance:</b> {usd(bal)}\n\nPlease select the withdrawal method:", markup=markup, reply_to=message.id, owner_id=user_id)
 
 
 @app.on_message(filters.command("close") & filters.private)
@@ -1945,6 +2167,135 @@ async def report_cmd(client: Client, message: Message):
         await send_msg(message.chat.id, f"{pe('⚠️')} Error: {e}", reply_to=message.id)
 
 
+@app.on_message(filters.command("reportbot"))
+async def reportbot_cmd(client: Client, message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    total_users = await users_db.count_documents({})
+    verified_users = await users_db.count_documents({"verified": True})
+    unverified_users = max(0, total_users - verified_users)
+    active_games_db = await games_db.count_documents({"status": "open"})
+    active_mem_games = len(matches) + len(mines_sessions)
+    active_games = max(active_games_db, active_mem_games)
+
+    agg = await users_db.aggregate([
+        {"$group": {
+            "_id": None,
+            "total_real_bal": {"$sum": "$balance"},
+            "total_coin_bal": {"$sum": "$coin_balance"},
+            "total_withdrawn": {"$sum": "$total_withdrawn"},
+            "total_coin_wagered": {"$sum": "$coin_wagered"}
+        }}
+    ]).to_list(1)
+    stats = agg[0] if agg else {}
+    total_real_bal = float(stats.get("total_real_bal", 0.0))
+    total_coin_bal = float(stats.get("total_coin_bal", 0.0))
+    total_withdrawn = float(stats.get("total_withdrawn", 0.0))
+    total_coin_wagered = float(stats.get("total_coin_wagered", 0.0))
+
+    pending_wd_users = len(admin_withdraw_msgs)
+    pending_tkts = len(pending_tickets)
+    active_tkts = len(active_tickets) // 2
+
+    text = (
+        f"{pe('📊')} <b>BOT FULL REPORT</b>\n\n"
+        f"{pe('👥')} <b>Total Users:</b> {total_users:,}\n"
+        f"{pe('✅')} <b>Verified Users:</b> {verified_users:,}\n"
+        f"{pe('❌')} <b>Unverified Users:</b> {unverified_users:,}\n"
+        f"{pe('🎮')} <b>Active Games Playing Now:</b> {active_games}\n\n"
+        f"{pe('💰')} <b>Total User Real Balance:</b> ${usd(total_real_bal)}\n"
+        f"{pe('📤')} <b>Total Withdrawn:</b> ${usd(total_withdrawn)}\n"
+        f"{pe('⏳')} <b>Pending Withdraw Requests:</b> {pending_wd_users}\n\n"
+        f"{pe('🪙')} <b>Total Coin Balance:</b> {usd(total_coin_bal)}\n"
+        f"{pe('📈')} <b>Total Coin Turnover:</b> {usd(total_coin_wagered)}\n"
+        f"{pe('🎟')} <b>Pending / Active Tickets:</b> {pending_tkts} / {active_tkts}"
+    )
+    await send_msg(message.chat.id, text, reply_to=message.id)
+
+
+@app.on_message(filters.command("coinsreport"))
+async def coinsreport_cmd(client: Client, message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    top_users = await users_db.find(
+        {"coin_balance": {"$gt": 0}},
+        {"user_id": 1, "name": 1, "coin_balance": 1}
+    ).sort("coin_balance", -1).limit(20).to_list(20)
+
+    text = f"{pe('🪙')} <b>TOP 20 COIN BALANCES</b>\n\n"
+    if not top_users:
+        text += "<i>No users with coin balance found.</i>"
+    else:
+        for idx, u in enumerate(top_users, 1):
+            uid = u["user_id"]
+            name = html.escape(await fetch_real_name(uid, u.get("name")))
+            c_bal = float(u.get("coin_balance", 0.0))
+            text += f"<b>{idx}.</b> <a href='tg://user?id={uid}'>{name}</a> (<code>{uid}</code>) — <b>{usd(c_bal)}</b> Coins\n"
+    await send_msg(message.chat.id, text, reply_to=message.id)
+
+
+@app.on_message(filters.command("resetamount"))
+async def resetamount_cmd(client: Client, message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    if len(message.command) < 2:
+        return await send_msg(message.chat.id, "<b>Usage:</b> <code>/resetamount [amount] [@username/user_id]</code> (or reply to user)", reply_to=message.id)
+    try:
+        new_amt = round(float(message.command[1].replace("$", "").strip()), 2)
+    except ValueError:
+        return await send_msg(message.chat.id, f"{pe('❌')} <b>Invalid amount!</b>", reply_to=message.id)
+    if new_amt < 0:
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Amount cannot be negative.</b>", reply_to=message.id)
+
+    target_id, safe_name = await resolve_target_user(message, arg_index=2)
+    if not target_id:
+        return await send_msg(message.chat.id, f"{pe('⚠️')} <b>Reply to a user or provide a username/user ID.</b>", reply_to=message.id)
+
+    await get_or_create_user(target_id)
+    await users_db.update_one({"user_id": target_id}, {"$set": {"balance": new_amt}})
+    await send_msg(
+        message.chat.id,
+        f"{pe('✅')} <b>Real Balance Reset!</b>\n\n{pe('👤')} <b>User:</b> <a href='tg://user?id={target_id}'>{safe_name}</a> (<code>{target_id}</code>)\n{pe('💵')} <b>New Real Balance:</b> ${usd(new_amt)}",
+        reply_to=message.id
+    )
+
+
+@app.on_message(filters.command("giveaway") & filters.private)
+async def giveaway_cmd(client: Client, message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    uid = message.from_user.id
+    giveaway_wizard[uid] = {
+        "step": None,
+        "dm_chat_id": message.chat.id,
+        "wizard_msg_id": None,
+        "data": {
+            "target_chat_id": TRACK_GROUP_ID,
+            "host": "",
+            "amount": "",
+            "title": "",
+            "photo_file_id": None,
+            "force_channel": FSUB_CHANNEL,
+            "force_group": True,
+            "cond_name": False,
+            "cond_bio": False,
+            "cond_premium": False,
+            "min_messages": 0,
+            "captcha": True,
+            "notes": "",
+            "duration_str": ""
+        }
+    }
+    text = f"{pe('🎉')} <b>GIVEAWAY MANAGER</b>\n\nChoose an option below:"
+    markup = kb(
+        [("Start New Giveaway", "gw_start_new", "success", "🎉")],
+        [("Manage Giveaway", "gw_manage", "primary", "⚙️")]
+    )
+    sent = await send_msg(message.chat.id, text, markup=markup, reply_to=message.id, owner_id=uid)
+    if sent and "message_id" in sent:
+        giveaway_wizard[uid]["wizard_msg_id"] = sent["message_id"]
+
+
 @app.on_message(filters.command(["mines", "mns"]))
 async def mines_cmd(client: Client, message: Message):
     is_private = (message.chat.type == enums.ChatType.PRIVATE)
@@ -1967,7 +2318,7 @@ async def mines_cmd(client: Client, message: Message):
 
     if len(args) == 0:
         msg_text = f"{pe('💣')} <b>Mines</b>\n\n{pe('⬆️')} Choose a bet or enter your own\nMinimum bet - {usd(min_bet)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-        await send_msg(chat_id, msg_text, markup=get_mines_bet_kb(bal), reply_to=message.id)
+        await send_msg(chat_id, msg_text, markup=get_mines_bet_kb(bal), reply_to=message.id, owner_id=uid)
     else:
         stake = parse_bet(args[0], bal)
         if stake == -1.0:
@@ -1976,7 +2327,7 @@ async def mines_cmd(client: Client, message: Message):
             return await send_msg(chat_id, f"{pe('⚠️')} <b>Minimum bet is {usd(min_bet)}</b>", reply_to=message.id)
         if stake > bal:
             return await send_msg(chat_id, f"{pe('⚠️')} <b>Insufficient coin balance.</b>", reply_to=message.id)
-        await send_msg(chat_id, f"{pe('💲')} Bet: {usd(stake)}\n\n{pe('💣')} <b>Select the number of mines</b>", markup=get_mines_count_kb(stake), reply_to=message.id)
+        await send_msg(chat_id, f"{pe('💲')} Bet: {usd(stake)}\n\n{pe('💣')} <b>Select the number of mines</b>", markup=get_mines_count_kb(stake), reply_to=message.id, owner_id=uid)
 
 
 # ================= CASINO GAMES COMMANDS =================
@@ -2248,8 +2599,8 @@ async def rain_cmd(client: Client, message: Message):
         min_msgs = int(parts[3])
         min_turnover = float(parts[4])
         time_str = parts[5].lower()
-        if winners_count <= 0 or total_amount <= 0:
-            return await message.reply_text(f"{pe('❌')} <b>Numbers of winners and amount is greater than 1.</b>")
+        if winners_count <= 0 or total_amount < 5.0:
+            return await message.reply_text(f"{pe('❌')} <b>Minimum rain amount is $5.00 and winners must be at least 1.</b>")
 
         duration_secs = 0
         if "h" in time_str:
@@ -2287,7 +2638,7 @@ async def rain_cmd(client: Client, message: Message):
             pass
         asyncio.create_task(rain_timer_task(message.chat.id, sent["message_id"], event_id, end_time, total_amount, winners_count, min_msgs, min_turnover))
     except Exception:
-        await message.reply_text("Usage: /rain [winners] [total_amount] [min_msgs] [min_coin_wager] [time(h/m)]\nExample: `/rain 1 100 100 200 2h`")
+        await message.reply_text("Usage: /rain [winners] [total_amount] [min_msgs] [min_coin_wager] [time(h/m)]\nMinimum amount: $5.00\nExample: `/rain 1 100 100 200 2h`")
 
 
 @app.on_message(filters.command("resetbal"))
@@ -2372,13 +2723,17 @@ async def adminhelp_cmd(client: Client, message: Message):
         "🔸 `/broadcast` - Reply to any msg to send to all users\n"
         "🔸 `/check [username/id]` - Check specific user's activity\n"
         "🔸 `/report [username/id]` - Full user report (coins, balances, etc)\n"
+        "🔸 `/reportbot` - Full bot statistics report\n"
+        "🔸 `/coinsreport` - Top 20 coin balances\n"
+        "🔸 `/resetamount [amount] [username/id]` - Reset user real balance\n"
+        "🔸 `/giveaway` - Open giveaway manager in DM\n"
         "🔸 `/affiliatecheck [username/id]` - Check user affiliate details\n"
         "🔸 `/depo [amount] [username/id]` - Deposit real ($) or coins\n"
         "🔸 `/resetbal [username/id]` - Reset user coin balance to 0\n"
         "🔸 `/addreffer [amount] [username/id]` - Add referrals to referral race\n"
         "🔸 `/race on` / `/race off` - Turn weekly coin race on/off\n"
         "🔸 `/refferal on` / `/refferal off` - Turn weekly referral race on/off\n"
-        "🔸 `/rain [wins] [amt] [msgs] [min_coin_wager] [time]` - Start group rain\n"
+        "🔸 `/rain [wins] [amt] [msgs] [min_coin_wager] [time]` - Start group rain (min $5)\n"
         "🔸 `/access` (in a group) - Authorize group for Leaderboard & Games\n"
         "🔸 `/revoke` (in a group) - Remove group authorization\n"
     )
@@ -2673,8 +3028,9 @@ async def cb_router(client: Client, call: CallbackQuery):
         return await answer_cb(cb_id, show_alert=False)
 
     # Check button ownership first for owner-bound messages
+    shared_prefixes = ("pvp_join:", "rain_join_", "aff_approve_", "aff_reject_", "ldb_", "gw_enter:", "gw_cap:")
     owner = msg_owner.get((chat_id, msg_id))
-    if owner and owner != uid and not data.startswith("pvp_join:") and not data.startswith("rain_join_") and not data.startswith("aff_approve_") and not data.startswith("aff_reject_") and not data.startswith("ldb_"):
+    if owner and owner != uid and not data.startswith(shared_prefixes):
         return await answer_cb(cb_id, "This button is not yours!", show_alert=True)
 
     # BONUS
@@ -2688,12 +3044,217 @@ async def cb_router(client: Client, call: CallbackQuery):
             hrs, mins = divmod(mins, 60)
             time_str = f"{hrs}h {mins}m {secs}s" if hrs > 0 else f"{mins}m {secs}s"
             return await answer_cb(cb_id, f"Bonus can be claimed every 2 hours! Time left: {time_str}", show_alert=True)
-        await users_db.update_one({"user_id": uid}, {"$set": {"last_bonus_claim": now}, "$inc": {"coin_balance": 1500}})
-        await answer_cb(cb_id, "Bonus claimed! +1,500 Coins added.", show_alert=True)
-        return await edit_msg(chat_id, msg_id, f"{pe('✅')} <b>Bonus Claimed!</b>\n\n1,500 Coins have been added to your coin balance. Come back in 2 hours for more!", markup=None)
 
-    if not data.startswith("rain_join_") and not data.startswith("aff_approve_") and not data.startswith("aff_reject_"):
+        total_aff = len(user.get("affiliates", []))
+        offset = int(user.get("bonus_ref_offset", 0) or 0)
+        bonus_refs = max(0, total_aff - offset)
+        if bonus_refs < 2:
+            return await answer_cb(cb_id, f"Minimum 2 referrals required via affiliate link to claim bonus! Current bonus referrals: {bonus_refs}/2", show_alert=True)
+
+        reward_coins = calc_bonus_coins(bonus_refs)
+        await users_db.update_one(
+            {"user_id": uid},
+            {"$set": {"last_bonus_claim": now, "bonus_ref_offset": total_aff}, "$inc": {"coin_balance": reward_coins}}
+        )
+        await answer_cb(cb_id, f"Bonus claimed! +{reward_coins:,} Coins added ({bonus_refs} referrals).", show_alert=True)
+        return await edit_msg(chat_id, msg_id, f"{pe('✅')} <b>Bonus Claimed!</b>\n\n<b>+{reward_coins:,} Coins</b> have been added to your coin balance (from <b>{bonus_refs}</b> referrals). Bonus referral count is now reset to 0; come back in 2 hours for more!", markup=None)
+
+    if not data.startswith(("rain_join_", "aff_approve_", "aff_reject_", "gw_enter:", "gw_cap:")):
         await answer_cb(cb_id, show_alert=False)
+
+    # GIVEAWAY WIZARD & MANAGEMENT CALLBACKS
+    if data.startswith("gw_"):
+        if not await is_admin(uid):
+            return await answer_cb(cb_id, "This button is not yours!", show_alert=True)
+        wiz = giveaway_wizard.get(uid)
+        if not wiz:
+            giveaway_wizard[uid] = {
+                "step": None,
+                "dm_chat_id": chat_id,
+                "wizard_msg_id": msg_id,
+                "data": {
+                    "target_chat_id": TRACK_GROUP_ID,
+                    "host": "", "amount": "", "title": "", "photo_file_id": None,
+                    "force_channel": FSUB_CHANNEL, "force_group": True,
+                    "cond_name": False, "cond_bio": False, "cond_premium": False,
+                    "min_messages": 0, "captcha": True, "notes": "", "duration_str": ""
+                }
+            }
+            wiz = giveaway_wizard[uid]
+        wiz["dm_chat_id"] = chat_id
+        wiz["wizard_msg_id"] = msg_id
+        gw_data = wiz["data"]
+
+        if data == "gw_start_new":
+            wiz["step"] = "confirm_chat"
+            target_grp = gw_data.get("target_chat_id", TRACK_GROUP_ID)
+            txt = f"{pe('🎉')} <b>Start New Giveaway</b>\n\nAuto-connected Group ID: <code>{target_grp}</code>\n\nConfirm this chat to continue?"
+            await update_giveaway_wizard_msg(uid, txt, kb([("Confirm", "gw_confirm_chat", "success"), ("Back", "gw_back_menu", "danger")]))
+        elif data == "gw_back_menu":
+            wiz["step"] = None
+            await update_giveaway_wizard_msg(uid, f"{pe('🎉')} <b>GIVEAWAY MANAGER</b>\n\nChoose an option below:", kb(
+                [("Start New Giveaway", "gw_start_new", "success", "🎉")],
+                [("Manage Giveaway", "gw_manage", "primary", "⚙️")]
+            ))
+        elif data == "gw_confirm_chat":
+            wiz["step"] = "wait_host"
+            await update_giveaway_wizard_msg(uid, f"{pe('✏️')} <b>Enter Host Name</b> (e.g. <code>@redcube</code> or host name):", kb([("Cancel", "gw_back_menu", "danger")]))
+        elif data == "gw_fsub_confirm":
+            gw_data["force_channel"] = FSUB_CHANNEL
+            gw_data["force_group"] = True
+            wiz["step"] = "conditions"
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+        elif data == "gw_fsub_skip":
+            gw_data["force_channel"] = None
+            gw_data["force_group"] = True
+            wiz["step"] = "conditions"
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+        elif data == "gw_toggle_name":
+            gw_data["cond_name"] = not gw_data.get("cond_name", False)
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+        elif data == "gw_toggle_bio":
+            gw_data["cond_bio"] = not gw_data.get("cond_bio", False)
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+        elif data == "gw_toggle_prem":
+            gw_data["cond_premium"] = not gw_data.get("cond_premium", False)
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+        elif data == "gw_ask_minmsg":
+            wiz["step"] = "wait_minmsg"
+            await update_giveaway_wizard_msg(uid, f"{pe('✏️')} <b>Enter minimum required messages in group</b> (number), or tap <b>Skip</b>:", kb([("Skip", "gw_skip_minmsg", "primary")]))
+        elif data == "gw_skip_minmsg":
+            gw_data["min_messages"] = 0
+            wiz["step"] = "conditions"
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+        elif data == "gw_toggle_cap":
+            gw_data["captcha"] = not gw_data.get("captcha", True)
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+        elif data == "gw_to_notes":
+            wiz["step"] = "wait_notes"
+            await update_giveaway_wizard_msg(uid, f"{pe('✏️')} <b>Enter any extra notes</b> for the giveaway post, or tap <b>Skip</b>:", kb([("Skip", "gw_skip_notes", "primary")]))
+        elif data == "gw_skip_notes":
+            gw_data["notes"] = ""
+            wiz["step"] = "wait_duration"
+            await update_giveaway_wizard_msg(uid, f"{pe('⏱')} <b>Enter giveaway duration</b> (e.g. <code>1m</code>, <code>1h</code>, <code>1d</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+        elif data == "gw_manage":
+            active_gws = await giveaways_db.find({"status": "active"}).to_list(10)
+            if not active_gws:
+                await update_giveaway_wizard_msg(uid, f"{pe('ℹ️')} <b>No active giveaways right now.</b>", kb([("Back", "gw_back_menu", "danger")]))
+            else:
+                rows = []
+                for g in active_gws:
+                    rows.append([(f"End: {g.get('title', g['_id'])}", f"gw_end_now:{g['_id']}", "danger")])
+                rows.append([("Back", "gw_back_menu", "primary")])
+                await update_giveaway_wizard_msg(uid, f"{pe('⚙️')} <b>Manage Active Giveaways</b>\n\nSelect a giveaway to end immediately:", kb(*rows))
+        elif data.startswith("gw_end_now:"):
+            target_gw_id = data.split(":", 1)[1]
+            await finalize_giveaway(target_gw_id)
+            await update_giveaway_wizard_msg(uid, f"{pe('✅')} Giveaway <code>{html.escape(target_gw_id)}</code> ended and winner announced.", kb([("Back", "gw_back_menu", "primary")]))
+        return
+
+    # GIVEAWAY PARTICIPANT ENTRY & CAPTCHA
+    if data.startswith("gw_enter:"):
+        gw_id = data.split(":", 1)[1]
+        gw = await giveaways_db.find_one({"_id": gw_id, "status": "active"})
+        if not gw:
+            return await answer_cb(cb_id, "This giveaway has already ended!", show_alert=True)
+        if uid in gw.get("participants", []):
+            return await answer_cb(cb_id, "You have already entered this giveaway!", show_alert=True)
+
+        # Force channel & group check
+        f_chan = gw.get("force_channel")
+        f_grp = gw.get("force_group")
+        target_grp = gw.get("target_chat_id", TRACK_GROUP_ID)
+
+        async def check_member_status(chat_id_or_user, u_id):
+            try:
+                m = await client.get_chat_member(chat_id_or_user, u_id)
+                st = str(m.status).lower()
+                return any(x in st for x in ["member", "admin", "creator", "owner", "restricted"])
+            except Exception:
+                return False
+
+        chan_ok = await check_member_status(f_chan, uid) if f_chan else True
+        grp_ok = await check_member_status(target_grp, uid) if f_grp else True
+
+        if not (chan_ok and grp_ok):
+            chan_url = f"https://t.me/{f_chan.replace('@', '')}" if f_chan else f"https://t.me/{FSUB_CHANNEL.replace('@', '')}"
+            join_rows = []
+            if f_chan and not chan_ok:
+                join_rows.append([btn("Join Channel", url=chan_url, style="primary")])
+            if f_grp and not grp_ok:
+                join_rows.append([btn("Join Group", url=GROUP_INVITE_LINK, style="primary")])
+            join_rows.append([btn("Join Giveaway", data=f"gw_enter:{gw_id}", style="success")])
+            await send_msg(
+                uid,
+                f"{pe('⚠️')} <b>Please join the required Channel and Group first, then click Join Giveaway!</b>",
+                markup={"inline_keyboard": join_rows}
+            )
+            return await answer_cb(cb_id, "Please join the required Channel and Group first!", show_alert=True)
+
+        # Conditions check
+        try:
+            u_chat = await app.get_chat(uid)
+        except Exception:
+            u_chat = None
+
+        if gw.get("cond_name"):
+            full_nm = f"{call.from_user.first_name or ''} {call.from_user.last_name or ''}".lower()
+            if REQUIRED_USERNAME_TAG.lower() not in full_nm:
+                return await answer_cb(cb_id, f"Please add {REQUIRED_USERNAME_TAG} to your Telegram name first!", show_alert=True)
+
+        if gw.get("cond_bio"):
+            bio_txt = (u_chat.bio if u_chat else "") or ""
+            if GROUP_INVITE_LINK.lower() not in bio_txt.lower():
+                return await answer_cb(cb_id, f"Please add the group link ({GROUP_INVITE_LINK}) to your bio first!", show_alert=True)
+
+        if gw.get("cond_premium"):
+            if not getattr(call.from_user, "is_premium", False):
+                return await answer_cb(cb_id, "Only Telegram Premium users can enter this giveaway!", show_alert=True)
+
+        min_m = int(gw.get("min_messages", 0) or 0)
+        if min_m > 0:
+            act = await activity_db.aggregate([
+                {"$match": {"user_id": uid, "group_id": target_grp}},
+                {"$group": {"_id": None, "total": {"$sum": "$message_count"}}}
+            ]).to_list(1)
+            msg_cnt = act[0]["total"] if act else 0
+            if msg_cnt < min_m:
+                return await answer_cb(cb_id, f"You need at least {min_m} messages in the group! Current: {msg_cnt}", show_alert=True)
+
+        if gw.get("captcha", True):
+            a_num = random.randint(1, 9)
+            b_num = random.randint(1, 9)
+            ans = a_num + b_num
+            choices = sorted(list({ans, random.randint(2, 18), random.randint(2, 18)}))
+            giveaway_captcha_sessions[(uid, gw_id)] = {"ans": ans, "ts": time.time()}
+            cap_btns = [[btn(str(c), f"gw_cap:{gw_id}:{c}", "primary") for c in choices]]
+            await send_msg(uid, f"🤖 <b>Captcha Verification:</b> What is <b>{a_num} + {b_num}</b>?", markup={"inline_keyboard": cap_btns})
+            return await answer_cb(cb_id, "Check your DM to solve the captcha!", show_alert=True)
+
+        await giveaways_db.update_one({"_id": gw_id}, {"$addToSet": {"participants": uid}})
+        return await answer_cb(cb_id, "You have successfully entered the giveaway! 🎉", show_alert=True)
+
+    elif data.startswith("gw_cap:"):
+        _, gw_id, picked_str = data.split(":", 2)
+        cap = giveaway_captcha_sessions.get((uid, gw_id))
+        if not cap or time.time() - cap["ts"] > 120:
+            return await answer_cb(cb_id, "Captcha expired. Click Enter giveaway again.", show_alert=True)
+        if int(picked_str) != int(cap["ans"]):
+            return await answer_cb(cb_id, "Wrong answer! Try again.", show_alert=True)
+        giveaway_captcha_sessions.pop((uid, gw_id), None)
+        gw = await giveaways_db.find_one({"_id": gw_id, "status": "active"})
+        if not gw:
+            return await answer_cb(cb_id, "Giveaway ended.", show_alert=True)
+        await giveaways_db.update_one({"_id": gw_id}, {"$addToSet": {"participants": uid}})
+        await edit_msg(chat_id, msg_id, f"{pe('✅')} <b>Captcha passed!</b> You are now entered in <b>{html.escape(gw.get('title', 'Giveaway'))}</b>.", markup=None)
+        return await answer_cb(cb_id, "Entered giveaway! 🎉", show_alert=True)
 
     # AFFILIATE APPROVAL ROUTING
     if data.startswith("aff_approve_"):
@@ -2882,9 +3443,9 @@ async def cb_router(client: Client, call: CallbackQuery):
         user = await get_or_create_user(uid, call.from_user)
         lang = await get_lang(uid)
         welcome_body = TR[lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get('bio_link', 'No Link Generated'))
-        await edit_msg(chat_id, msg_id, welcome_body, markup=get_main_menu(lang))
+        await edit_msg(chat_id, msg_id, welcome_body, markup=get_main_menu(lang), owner_id=uid)
     elif data == "wd_method_redcube":
-        await edit_msg(chat_id, msg_id, f"{pe('✏️')} <b>Please send your Withdraw Amount:</b>")
+        await edit_msg(chat_id, msg_id, f"{pe('✏️')} <b>Please send your Withdraw Amount:</b>", owner_id=uid)
         user_states[uid]["state"] = "wait_for_wd_amount"
         return await answer_cb(cb_id)
     elif data == "menu_verify":
@@ -2899,9 +3460,9 @@ async def cb_router(client: Client, call: CallbackQuery):
         markup = kb([(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
         if name_ok and bio_ok:
             await users_db.update_one({"user_id": uid}, {"$set": {"verified": True}})
-            await edit_msg(chat_id, msg_id, TR[lang]["verify_ok"], markup=markup)
+            await edit_msg(chat_id, msg_id, TR[lang]["verify_ok"], markup=markup, owner_id=uid)
         else:
-            await edit_msg(chat_id, msg_id, TR[lang]["verify_fail"].format(tag=REQUIRED_USERNAME_TAG), markup=markup)
+            await edit_msg(chat_id, msg_id, TR[lang]["verify_fail"].format(tag=REQUIRED_USERNAME_TAG), markup=markup, owner_id=uid)
 
     elif data == "menu_affiliate":
         if not await pass_fsub(client, call):
@@ -2911,7 +3472,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         conf = await get_config()
         if not conf.get("affiliate_enabled", True):
             markup = kb([(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
-            return await edit_msg(chat_id, msg_id, TR[lang]["affiliate_disabled"], markup=markup)
+            return await edit_msg(chat_id, msg_id, TR[lang]["affiliate_disabled"], markup=markup, owner_id=uid)
         invite_link = user.get("affiliate_link")
         if not invite_link:
             try:
@@ -2921,7 +3482,7 @@ async def cb_router(client: Client, call: CallbackQuery):
             except:
                 return await send_msg(chat_id, "Error creating link. Bot must be admin.")
         markup = kb([("Affiliate Status", "menu_aff_stats", "primary", "📊")], [(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
-        await edit_msg(chat_id, msg_id, TR[lang]["affiliate_link"].format(link=invite_link), markup=markup, disable_web_page_preview=True)
+        await edit_msg(chat_id, msg_id, TR[lang]["affiliate_link"].format(link=invite_link), markup=markup, disable_web_page_preview=True, owner_id=uid)
 
     elif data == "menu_aff_stats":
         if not await pass_fsub(client, call):
@@ -2930,7 +3491,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         lang = await get_lang(uid)
         conf = await get_config()
         markup = kb([(TR[lang]["btn_back"], "menu_affiliate", "danger", "🔙")])
-        await edit_msg(chat_id, msg_id, TR[lang]["affiliate_stats"].format(real=len(user.get("affiliates", [])), left=len(user.get("left_affiliates", [])), fake=len(user.get("fake_affiliates", [])), reward=conf['affiliate_reward'], req=conf['affiliate_req']), markup=markup)
+        await edit_msg(chat_id, msg_id, TR[lang]["affiliate_stats"].format(real=len(user.get("affiliates", [])), left=len(user.get("left_affiliates", [])), fake=len(user.get("fake_affiliates", [])), reward=conf['affiliate_reward'], req=conf['affiliate_req']), markup=markup, owner_id=uid)
 
     elif data == "menu_support":
         if not await pass_fsub(client, call):
@@ -2940,7 +3501,7 @@ async def cb_router(client: Client, call: CallbackQuery):
             return await send_msg(chat_id, "You already have an active/pending ticket.")
         user_states[uid] = {"state": "wait_for_support"}
         markup = kb([(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
-        await edit_msg(chat_id, msg_id, TR[lang]["sup_ask"], markup=markup)
+        await edit_msg(chat_id, msg_id, TR[lang]["sup_ask"], markup=markup, owner_id=uid)
 
     elif data == "menu_draw":
         if not await pass_fsub(client, call):
@@ -2949,24 +3510,24 @@ async def cb_router(client: Client, call: CallbackQuery):
         conf = await get_config()
         markup = kb([(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
         if not conf.get("draw_enabled", True):
-            return await edit_msg(chat_id, msg_id, f"{pe('⚠️')} <b>Draw now disabled, soon coming.</b>", markup=markup)
+            return await edit_msg(chat_id, msg_id, f"{pe('⚠️')} <b>Draw now disabled, soon coming.</b>", markup=markup, owner_id=uid)
         draw_data = await config_db.find_one({"_id": "latest_draw"})
         if not draw_data or not draw_data.get("winners"):
-            return await edit_msg(chat_id, msg_id, TR[lang]["draw_none"], markup=markup)
+            return await edit_msg(chat_id, msg_id, TR[lang]["draw_none"], markup=markup, owner_id=uid)
         winners_text = ""
         for i, wid in enumerate(draw_data["winners"], 1):
             u_doc = await users_db.find_one({"user_id": wid})
             name = await fetch_real_name(wid, u_doc.get("name") if u_doc else None)
             winners_text += f"{i}. {html.escape(name)}\n"
         text = TR[lang]["draw_res"].format(time=draw_data["time"], total=draw_data["total"], amt=draw_data.get("amount", 2.0), winners=winners_text)
-        await edit_msg(chat_id, msg_id, text, markup=markup, disable_web_page_preview=True)
+        await edit_msg(chat_id, msg_id, text, markup=markup, disable_web_page_preview=True, owner_id=uid)
 
     elif data == "menu_lang":
         if not await pass_fsub(client, call):
             return
         lang = await get_lang(uid)
         btns = kb([("English", "lang_en", "primary", "🇬🇧"), ("Русский", "lang_ru", "danger", "🇷🇺")], [("Hindi", "lang_hi", "success", "🇮🇳")], [(TR[lang]["btn_back"], "menu_main", "danger", "🔙")])
-        await edit_msg(chat_id, msg_id, "Select your language / Выберите язык / Choose language:", markup=btns)
+        await edit_msg(chat_id, msg_id, "Select your language / Выберите язык / Choose language:", markup=btns, owner_id=uid)
 
     elif data.startswith("lang_"):
         if not await pass_fsub(client, call):
@@ -2980,7 +3541,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         welcome_body = TR[new_lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get('bio_link', ''))
         await edit_msg(chat_id, msg_id, TR[new_lang]["lang_set"])
         await asyncio.sleep(0.3)
-        await send_msg(chat_id, welcome_body, markup=get_main_menu(new_lang), disable_web_page_preview=True)
+        await send_msg(chat_id, welcome_body, markup=get_main_menu(new_lang), disable_web_page_preview=True, owner_id=uid)
 
     elif data == "menu_leaderboard":
         if is_private and not await pass_fsub(client, call):
@@ -2992,7 +3553,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         text = await generate_new_leaderboard("message")
         row1 = [(tr["btn_coins"], "ldb_coins", "primary", "🪙"), (tr["btn_messages"], "ldb_messages", "success", "💬")]
         btns = kb(row1, [(tr["btn_back"], "menu_main", "danger", "🔙")]) if is_private else kb(row1)
-        await edit_msg(chat_id, msg_id, text, markup=btns, disable_web_page_preview=True)
+        await edit_msg(chat_id, msg_id, text, markup=btns, disable_web_page_preview=True, owner_id=uid)
 
     elif data.startswith("ldb_"):
         metric = data.split("_")[1]
@@ -3124,7 +3685,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         bal = float(user.get("coin_balance", 0))
         if bal < bet:
             return await answer_cb(cb_id, "Insufficient coin balance!", show_alert=True)
-        await edit_msg(chat_id, msg_id, f"{pe('💲')} Bet: {usd(bet)}\n\n{pe('💣')} <b>Select the number of mines</b>", markup=get_mines_count_kb(bet))
+        await edit_msg(chat_id, msg_id, f"{pe('💲')} Bet: {usd(bet)}\n\n{pe('💣')} <b>Select the number of mines</b>", markup=get_mines_count_kb(bet), owner_id=uid)
         return await answer_cb(cb_id)
 
     elif data == "mines_change":
@@ -3133,7 +3694,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         conf = await get_config()
         min_bet = float(conf.get("min_bet", 1.0))
         msg_text = f"{pe('💣')} <b>Mines</b>\n\n{pe('⬆️')} Choose a bet or enter your own\nMinimum bet - {usd(min_bet)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-        await edit_msg(chat_id, msg_id, msg_text, markup=get_mines_bet_kb(bal))
+        await edit_msg(chat_id, msg_id, msg_text, markup=get_mines_bet_kb(bal), owner_id=uid)
         return await answer_cb(cb_id)
 
     elif data.startswith("mines_start:"):
@@ -3151,7 +3712,7 @@ async def cb_router(client: Client, call: CallbackQuery):
             "lock": asyncio.Lock()
         }
         txt = f"{pe('💲')} Bet: {usd(bet)}\n{pe('💣')} Mines: {mines}\n{pe('💎')} Crystals opened: 0\n\n{pe('🏆')} Win: {usd(bet)}"
-        await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid))
+        await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid), owner_id=uid)
         return await answer_cb(cb_id)
 
     elif data.startswith("mines_click:"):
@@ -3167,7 +3728,7 @@ async def cb_router(client: Client, call: CallbackQuery):
                 await update_coin_stats(uid, sess["bet"], 0)
                 bal = float((await get_or_create_user(uid)).get("coin_balance", 0))
                 txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over\n{pe('🏆')} Win: $0.00\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-                await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True, explode_idx=idx))
+                await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True, explode_idx=idx), owner_id=uid)
                 mines_sessions.pop(uid, None)
             else:
                 sess["opened"].append(idx)
@@ -3184,11 +3745,11 @@ async def cb_router(client: Client, call: CallbackQuery):
                     except Exception:
                         pass
                     txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over (Cleared!)\n{pe('🏆')} Win: {usd(win_amt)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-                    await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True))
+                    await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True), owner_id=uid)
                     mines_sessions.pop(uid, None)
                 else:
                     txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('🏆')} Win: {usd(win_amt)}"
-                    await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid))
+                    await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid), owner_id=uid)
         return await answer_cb(cb_id)
 
     elif data == "mines_cashout":
@@ -3196,6 +3757,9 @@ async def cb_router(client: Client, call: CallbackQuery):
         if not sess or sess["chat_id"] != chat_id or sess["msg_id"] != msg_id:
             return await answer_cb(cb_id, "Session expired.", show_alert=True)
         async with sess["lock"]:
+            if uid not in mines_sessions:
+                return await answer_cb(cb_id, "Already cashed out!", show_alert=True)
+            mines_sessions.pop(uid, None)
             win_amt = round(sess["bet"] * calc_mines_mult(sess["mines"], len(sess["opened"])), 2)
             won_profit = round(win_amt - sess["bet"], 2)
             await users_db.update_one({"user_id": uid}, {"$inc": {"coin_balance": win_amt}})
@@ -3209,12 +3773,11 @@ async def cb_router(client: Client, call: CallbackQuery):
             except Exception:
                 pass
             txt = f"{pe('💲')} Bet: {usd(sess['bet'])}\n{pe('💣')} Mines: {sess['mines']}\n{pe('💎')} Crystals opened: {len(sess['opened'])}\n\n{pe('⭐')} Game over\n{pe('🏆')} Win: {usd(win_amt)}\n\n{pe('🌀')} Current coin balance: {usd(bal)}"
-            await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True))
-            mines_sessions.pop(uid, None)
+            await edit_msg(chat_id, msg_id, txt, markup=get_mines_board_kb(uid, reveal=True), owner_id=uid)
         return await answer_cb(cb_id)
 
 
-@app.on_message(filters.private & filters.text & ~filters.regex(r"^/"))
+@app.on_message(filters.private & ~filters.regex(r"^/"))
 async def plain_text_handler(client: Client, message: Message):
     if await check_double_msg(message.from_user.id):
         return
@@ -3222,8 +3785,131 @@ async def plain_text_handler(client: Client, message: Message):
         return
     uid = message.from_user.id
     lang = await get_lang(uid)
-    state = user_states.get(uid, {}).get("state")
     safe_name = html.escape(message.from_user.first_name or "User")
+
+    # GIVEAWAY WIZARD INPUTS (delete user message & update single wizard message)
+    if uid in giveaway_wizard and giveaway_wizard[uid].get("step") and await is_admin(uid):
+        wiz = giveaway_wizard[uid]
+        step = wiz["step"]
+        gw_data = wiz["data"]
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if step == "wait_host" and message.text:
+            gw_data["host"] = message.text.strip()
+            wiz["step"] = "wait_amount"
+            await update_giveaway_wizard_msg(uid, f"{pe('💰')} <b>Enter Giveaway Amount / Prize Pool</b> (e.g. <code>$500</code> or <code>5000 Coins</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+            return
+
+        if step == "wait_amount" and message.text:
+            gw_data["amount"] = message.text.strip()
+            wiz["step"] = "wait_title"
+            await update_giveaway_wizard_msg(uid, f"{pe('🎉')} <b>Enter Giveaway Title</b> (e.g. <code>500$ GIVEAWAY</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+            return
+
+        if step == "wait_title" and message.text:
+            gw_data["title"] = message.text.strip()
+            wiz["step"] = "wait_banner"
+            await update_giveaway_wizard_msg(uid, f"{pe('🖼')} <b>Send Banner Photo</b> for the giveaway:", kb([("Cancel", "gw_back_menu", "danger")]))
+            return
+
+        if step == "wait_banner":
+            if message.photo:
+                gw_data["photo_file_id"] = message.photo.file_id
+                wiz["step"] = "force_channel"
+                f_ch = gw_data.get("force_channel") or FSUB_CHANNEL
+                await update_giveaway_wizard_msg(
+                    uid,
+                    f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
+                    kb([("Confirm", "gw_fsub_confirm", "success"), ("Skip", "gw_fsub_skip", "primary")])
+                )
+            else:
+                await update_giveaway_wizard_msg(uid, f"{pe('⚠️')} Please send a valid <b>photo</b> for the banner:", kb([("Cancel", "gw_back_menu", "danger")]))
+            return
+
+        if step == "wait_minmsg" and message.text:
+            try:
+                gw_data["min_messages"] = max(0, int(message.text.strip()))
+            except ValueError:
+                gw_data["min_messages"] = 0
+            wiz["step"] = "conditions"
+            c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
+            await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+            return
+
+        if step == "wait_notes" and message.text:
+            gw_data["notes"] = message.text.strip()
+            wiz["step"] = "wait_duration"
+            await update_giveaway_wizard_msg(uid, f"{pe('⏱')} <b>Enter giveaway duration</b> (e.g. <code>1m</code>, <code>1h</code>, <code>1d</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+            return
+
+        if step == "wait_duration" and message.text:
+            dur_str = message.text.strip()
+            dur_secs = parse_duration_seconds(dur_str)
+            gw_data["duration_str"] = dur_str
+            gw_id = f"gw_{int(time.time())}_{random.randint(100, 999)}"
+            end_time = time.time() + dur_secs
+
+            gw_doc = {
+                "_id": gw_id,
+                "status": "active",
+                "created_by": uid,
+                "target_chat_id": gw_data.get("target_chat_id", TRACK_GROUP_ID),
+                "host": gw_data.get("host", ""),
+                "amount": gw_data.get("amount", ""),
+                "title": gw_data.get("title", "GIVEAWAY"),
+                "photo_file_id": gw_data.get("photo_file_id"),
+                "force_channel": gw_data.get("force_channel"),
+                "force_group": gw_data.get("force_group", True),
+                "cond_name": gw_data.get("cond_name", False),
+                "cond_bio": gw_data.get("cond_bio", False),
+                "cond_premium": gw_data.get("cond_premium", False),
+                "min_messages": gw_data.get("min_messages", 0),
+                "captcha": gw_data.get("captcha", True),
+                "notes": gw_data.get("notes", ""),
+                "end_time": end_time,
+                "participants": [],
+                "posts": []
+            }
+            await giveaways_db.insert_one(gw_doc)
+
+            post_text = build_giveaway_post_text(gw_doc)
+            post_kb = kb([("Enter giveaway", f"gw_enter:{gw_id}", "success")])
+            dest_chats = []
+            for ch in [gw_doc["target_chat_id"], gw_doc.get("force_channel") or FSUB_CHANNEL]:
+                if ch and ch not in dest_chats:
+                    dest_chats.append(ch)
+
+            saved_posts = []
+            for d_ch in dest_chats:
+                try:
+                    if gw_doc.get("photo_file_id"):
+                        sent_p = await tg("sendPhoto", chat_id=d_ch, photo=gw_doc["photo_file_id"], caption=post_text, reply_markup=post_kb, parse_mode="HTML")
+                        if sent_p and "message_id" in sent_p:
+                            saved_posts.append({"chat_id": d_ch, "message_id": sent_p["message_id"], "has_photo": True})
+                    else:
+                        sent_p = await send_msg(d_ch, post_text, markup=post_kb, disable_web_page_preview=True)
+                        if sent_p and "message_id" in sent_p:
+                            saved_posts.append({"chat_id": d_ch, "message_id": sent_p["message_id"], "has_photo": False})
+                except Exception as e:
+                    print(f"Giveaway post error in {d_ch}: {e}")
+
+            await giveaways_db.update_one({"_id": gw_id}, {"$set": {"posts": saved_posts}})
+            asyncio.create_task(giveaway_countdown_task(gw_id))
+            giveaway_wizard.pop(uid, None)
+            await update_giveaway_wizard_msg(
+                uid,
+                f"{pe('✅')} <b>Giveaway Launched!</b>\n\n<b>ID:</b> <code>{gw_id}</code>\n<b>Posted in:</b> {len(saved_posts)} chat(s)\n<b>Duration:</b> {html.escape(dur_str)}",
+                kb([("Manage Giveaways", "gw_manage", "primary")])
+            )
+            return
+
+    if not message.text:
+        return
+
+    state = user_states.get(uid, {}).get("state")
 
     if state == "wait_for_wd_amount":
         try:
@@ -3281,7 +3967,7 @@ async def plain_text_handler(client: Client, message: Message):
                     admin_ticket_msgs[uid][aid] = msg['message_id']
             except:
                 pass
-        return await send_msg(message.chat.id, TR[lang]["sup_sent"].format(tkt=ticket_id), markup=kb([(TR[lang]["btn_back"], "menu_main", "primary", "🔙")]), reply_to=message.id)
+        return await send_msg(message.chat.id, TR[lang]["sup_sent"].format(tkt=ticket_id), markup=kb([(TR[lang]["btn_back"], "menu_main", "primary", "🔙")]), reply_to=message.id, owner_id=uid)
 
     if state == "wait_for_txlink":
         if not await is_admin(uid):
@@ -3357,6 +4043,12 @@ async def main():
     await auth_groups_db.create_index("chat_id")
     await games_db.create_index("status")
     await games_db.create_index("user_id")
+    await giveaways_db.create_index("status")
+
+    # Resume countdowns for any active giveaways after restart
+    active_gws = await giveaways_db.find({"status": "active"}).to_list(None)
+    for g in active_gws:
+        asyncio.create_task(giveaway_countdown_task(g["_id"]))
 
     asyncio.create_task(web_server())
     asyncio.create_task(background_verification_check())
