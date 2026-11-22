@@ -274,7 +274,7 @@ async def answer_cb(cb_id: str, text: str = None, show_alert: bool = True):
 
 
 # ================= INITIALIZATION =================
-app = Client("my_advanc9768e6d_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("my_advanc97868e6d_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 client = AsyncIOMotorClient(MONGO_URI, maxPoolSize=500, minPoolSize=50)
 db = client['Advanced56BotDB']
