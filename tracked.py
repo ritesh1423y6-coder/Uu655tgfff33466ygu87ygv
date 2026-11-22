@@ -4167,20 +4167,21 @@ async def main():
     me = await app.get_me()
     BOT_USERNAME = me.username or ""
     await tg("setMyCommands", commands=[
-        BotCommand(command="start", description="Open Main Menu"),
-        BotCommand(command="help", description="List all commands"),
-        BotCommand(command="verify", description="Verify Telegram name and bio"),
-        BotCommand(command="affiliate", description="Get referral link & stats"),
-        BotCommand(command="leaderboard", description="View Activity Leaderboard"),
-        BotCommand(command="profile", description="View your stats and balances"),
-        BotCommand(command="bal", description="Check Coin & Real balance"),
-        BotCommand(command="bonus", description="Claim free coins bonus"),
-        BotCommand(command="tip", description="Tip coins to a user"),
-        BotCommand(command="support", description="Open a support ticket"),
-        BotCommand(command="close", description="Close active support ticket"),
-        BotCommand(command="lang", description="Change Bot Language"),
-        BotCommand(command="anonymous", description="Toggle Anonymous Mode in win logs"),
-        BotCommand(command="mines", description="Play Mines game")
+        await tg("setMyCommands", commands=[
+        {"command": "start", "description": "Open Main Menu"},
+        {"command": "help", "description": "List all commands"},
+        {"command": "verify", "description": "Verify Telegram name and bio"},
+        {"command": "affiliate", "description": "Get referral link & stats"},
+        {"command": "leaderboard", "description": "View Activity Leaderboard"},
+        {"command": "profile", "description": "View your stats and balances"},
+        {"command": "bal", "description": "Check Coin & Real balance"},
+        {"command": "bonus", "description": "Claim free coins bonus"},
+        {"command": "tip", "description": "Tip coins to a user"},
+        {"command": "support", "description": "Open a support ticket"},
+        {"command": "close", "description": "Close active support ticket"},
+        {"command": "lang", "description": "Change Bot Language"},
+        {"command": "anonymous", "description": "Toggle Anonymous Mode in win logs"},
+        {"command": "mines", "description": "Play Mines game"}
     ])
 
     # Resume active giveaways
