@@ -31,7 +31,7 @@ dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
 dns.resolver.default_resolver.nameservers = ['8.8.8.8', '8.8.4.4']
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "9102679894:AAHF8ZqGiOJ-S_pdN10tpQARgcgHpXOcmhk"
+BOT_TOKEN = "9102679894:AAE3zU6FT7ZbvAMzvIGyXZdGpdUoa1letJQ"
 
 # Helper bot tokens
 HELPER_BOT_TOKEN_1 = "9018656267:AAGi8Jv4g11t_0qy6E1_paI_SMfWXmtwK90"
@@ -274,7 +274,7 @@ async def answer_cb(cb_id: str, text: str = None, show_alert: bool = True):
 
 
 # ================= INITIALIZATION =================
-app = Client("my_advanc97868e6d_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("my_advanc9786867e6d_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 client = AsyncIOMotorClient(MONGO_URI, maxPoolSize=500, minPoolSize=50)
 db = client['Advanced56BotDB']
