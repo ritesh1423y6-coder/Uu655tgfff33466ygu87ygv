@@ -166,22 +166,22 @@ async def get_session() -> aiohttp.ClientSession:
     global HTTP_SESSION
     if HTTP_SESSION is None or HTTP_SESSION.closed:
         connector = aiohttp.TCPConnector(limit=500, ttl_dns_cache=300)
-        timeout = aiohttp.ClientTimeout(total=20, connect=8)
+        timeout = aiohttp.ClientTimeout(total=12, connect=5)
         HTTP_SESSION = aiohttp.ClientSession(connector=connector, timeout=timeout)
     return HTTP_SESSION
 
 
-api_semaphore = asyncio.Semaphore(40)
+api_semaphore = asyncio.Semaphore(50)
 
 
-async def tg(method: str, use_helper: bool = False, retries: int = 2, **params):
+async def tg(method: str, use_helper: bool = False, retries: int = 1, **params):
     async with api_semaphore:
         clean = {k: v for k, v in params.items() if v is not None}
         tok = BOT_TOKEN
         if use_helper and ACTIVE_HELPER_TOKENS:
             tok = random.choice(ACTIVE_HELPER_TOKENS)
         base = f"https://api.telegram.org/bot{tok}/"
-        req_timeout = 15
+        req_timeout = 8 if method == "sendDice" else 10
         for attempt in range(retries + 1):
             try:
                 s = await get_session()
@@ -191,12 +191,12 @@ async def tg(method: str, use_helper: bool = False, retries: int = 2, **params):
                         return res["result"]
                     retry_after = res.get("parameters", {}).get("retry_after")
                     if retry_after and attempt < retries:
-                        await asyncio.sleep(min(float(retry_after), 5.0))
+                        await asyncio.sleep(min(float(retry_after), 2.5))
                         continue
                     raise RuntimeError(res.get("description", str(res)))
             except (asyncio.TimeoutError, aiohttp.ClientError) as e:
                 if attempt < retries:
-                    await asyncio.sleep(0.35)
+                    await asyncio.sleep(0.2)
                     continue
                 raise RuntimeError(f"Network timeout on {method}: {e}")
 
@@ -262,21 +262,21 @@ async def clear_buttons(chat_id: int, message_id: int):
     if not message_id:
         return
     try:
-        await tg("editMessageReplyMarkup", chat_id=chat_id, message_id=message_id, reply_markup=None, retries=1)
+        await tg("editMessageReplyMarkup", chat_id=chat_id, message_id=message_id, reply_markup=None, retries=0)
     except Exception:
         pass
 
 
 async def del_msg(chat_id: int, message_id: int):
     try:
-        await tg("deleteMessage", chat_id=chat_id, message_id=message_id, retries=1)
+        await tg("deleteMessage", chat_id=chat_id, message_id=message_id, retries=0)
     except Exception:
         pass
 
 
 async def answer_cb(cb_id: str, text: str = None, show_alert: bool = True):
     try:
-        await tg("answerCallbackQuery", callback_query_id=cb_id, text=text, show_alert=show_alert, retries=1)
+        await tg("answerCallbackQuery", callback_query_id=cb_id, text=text, show_alert=show_alert, retries=0)
     except Exception:
         pass
 
@@ -435,7 +435,7 @@ async def is_bot_banned(user_id: int) -> bool:
 async def check_double_msg(user_id: int) -> bool:
     now = time.time()
     last = processed_msgs.get(user_id, 0.0)
-    if now - last < 0.35:
+    if now - last < 0.25:
         return True
     processed_msgs[user_id] = now
     return False
@@ -445,7 +445,7 @@ async def check_double_cb(user_id: int, cb_data: str) -> bool:
     now = time.time()
     key = (user_id, cb_data)
     last = processed_cbs.get(key, 0.0)
-    if now - last < 0.25:
+    if now - last < 0.2:
         return True
     processed_cbs[key] = now
     return False
@@ -780,36 +780,28 @@ async def send_emoji_roll(chat_id: int, game: str, n: int, reply_to: int = None,
         res = None
         if ACTIVE_HELPER_TOKENS:
             try:
-                res = await tg("sendDice", use_helper=True, retries=2, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
+                res = await tg("sendDice", use_helper=True, retries=1, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
             except Exception:
-                try:
-                    res = await tg("sendDice", use_helper=True, retries=2, chat_id=chat_id, emoji=emo)
-                except Exception:
-                    res = None
+                res = None
         if not res:
             try:
-                res = await tg("sendDice", use_helper=False, retries=2, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
+                res = await tg("sendDice", use_helper=False, retries=1, chat_id=chat_id, emoji=emo, reply_to_message_id=reply_to)
             except Exception:
-                try:
-                    res = await tg("sendDice", use_helper=False, retries=2, chat_id=chat_id, emoji=emo)
-                except Exception:
-                    res = None
+                res = None
         if res and "dice" in res:
             raw_val = res["dice"]["value"]
             actual_val = fix_dice_value(game, raw_val)
             values.append(actual_val)
         else:
-            max_v = 6
             if game in ["basket", "bask", "football"]:
                 rand_v = random.randint(1, 6)
                 values.append(fix_dice_value(game, rand_v))
             elif game == "slot":
                 values.append(random.randint(1, 64))
             else:
-                values.append(random.randint(1, max_v))
+                values.append(random.randint(1, 6))
         if i < n - 1:
-            await asyncio.sleep(0.08)
-        await asyncio.sleep(1.1)
+            await asyncio.sleep(0.55)
     return values
 
 
@@ -1254,6 +1246,7 @@ async def finish_match(sess: dict, payout_a: float, payout_b: float = 0.0, cashe
 
     sess["status"] = "ended"
     sess["rolling"] = False
+    sess["roll_started_at"] = 0.0
 
     matches.pop(gid, None)
     user_match.pop(ua, None)
@@ -1296,7 +1289,7 @@ async def finish_match(sess: dict, payout_a: float, payout_b: float = 0.0, cashe
         [("Change mode", f"back_mode:{game}:{stake}", "danger", "❌")]
     )
     if sess.get("prompt_msg_id"):
-        await clear_buttons(chat_id, sess["prompt_msg_id"])
+        asyncio.create_task(clear_buttons(chat_id, sess["prompt_msg_id"]))
     await send_msg(chat_id, end_text, markup=end_kb, owner_id=ua, reply_to=reply_to_id)
 
     if win_amt > 0:
@@ -1329,12 +1322,13 @@ async def evaluate_round(sess: dict, reply_to_id: int = None):
     w = m.play_round(mine, theirs)
 
     if sess.get("prompt_msg_id"):
-        await clear_buttons(chat_id, sess["prompt_msg_id"])
+        asyncio.create_task(clear_buttons(chat_id, sess["prompt_msg_id"]))
         sess["prompt_msg_id"] = None
 
     if m.winner is not None:
         sess["status"] = "ended"
         sess["rolling"] = False
+        sess["roll_started_at"] = 0.0
         if sess["type"] == "bot":
             await finish_match(sess, round(sess["stake"] * 1.92, 2) if m.winner == 0 else 0.0, reply_to_id=reply_to_id)
         else:
@@ -1354,29 +1348,20 @@ async def evaluate_round(sess: dict, reply_to_id: int = None):
         sess["turn_uid"] = ua
         sess["last_action"] = time.time()
         sess["rolling"] = False
+        sess["roll_started_at"] = 0.0
         sent = await send_msg(chat_id, f"{p1_mention}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=True), owner_id=ua, reply_to=reply_to_id)
         sess["prompt_msg_id"] = sent["message_id"] if sent else 0
     else:
         sess["turn_uid"] = ua
         sess["last_action"] = time.time()
         sess["rolling"] = False
+        sess["roll_started_at"] = 0.0
         sent = await send_msg(chat_id, f"{score_header}\n\n{p1_mention}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=True), owner_id=ua, reply_to=reply_to_id)
         sess["prompt_msg_id"] = sent["message_id"] if sent else 0
 
 
-async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int = None):
+async def _run_roll_worker(sess: dict, uid: int, order: str, reply_to_id: int = None):
     lock: asyncio.Lock = sess["lock"]
-    async with lock:
-        if sess.get("status") != "playing":
-            return
-        if sess.get("rolling"):
-            return
-        sess["rolling"] = True
-        sess["last_action"] = time.time()
-        if sess.get("prompt_msg_id"):
-            asyncio.create_task(clear_buttons(sess["chat_id"], sess["prompt_msg_id"]))
-            sess["prompt_msg_id"] = None
-
     chat_id, game, m = sess["chat_id"], sess["game"], sess["match"]
     needed = m.rolls_needed
 
@@ -1387,11 +1372,13 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
                 async with lock:
                     if sess.get("status") != "playing":
                         sess["rolling"] = False
+                        sess["roll_started_at"] = 0.0
                         return
                     sess["b_rolls"] = bot_rolls
                     sess["turn_uid"] = sess["ua"]
                     sess["last_action"] = time.time()
                     sess["rolling"] = False
+                    sess["roll_started_at"] = 0.0
                     sent = await send_msg(chat_id, f"{mention(sess['ua'])}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=False), owner_id=sess["ua"], reply_to=reply_to_id)
                     sess["prompt_msg_id"] = sent["message_id"] if sent else 0
                 return
@@ -1410,9 +1397,11 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
             async with lock:
                 if sess.get("status") != "playing":
                     sess["rolling"] = False
+                    sess["roll_started_at"] = 0.0
                     return
                 await evaluate_round(sess, reply_to_id=reply_to_id)
                 sess["rolling"] = False
+                sess["roll_started_at"] = 0.0
         else:
             if uid == sess["ua"]:
                 rem = needed - len(sess["u_rolls"])
@@ -1422,11 +1411,13 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
                 async with lock:
                     if sess.get("status") != "playing":
                         sess["rolling"] = False
+                        sess["roll_started_at"] = 0.0
                         return
                     sess["turn_uid"] = sess["ub"]
                     sess["last_action"] = time.time()
                     sess["rolling"] = False
-                    sent = await send_msg(chat_id, f"{mention(sess['ub'])}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess, is_round_start=False), owner_id=sess["ub"], reply_to=reply_to_id)
+                    sess["roll_started_at"] = 0.0
+                    sent = await send_msg(chat_id, f"{mention(sess['ub'])}, <b>your turn!</b> {game_pe(game)}", markup=turn_kb(sess), owner_id=sess["ub"], reply_to=reply_to_id)
                     sess["prompt_msg_id"] = sent["message_id"] if sent else 0
             elif uid == sess["ub"]:
                 rem = needed - len(sess["b_rolls"])
@@ -1436,19 +1427,48 @@ async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int 
                 async with lock:
                     if sess.get("status") != "playing":
                         sess["rolling"] = False
+                        sess["roll_started_at"] = 0.0
                         return
                     await evaluate_round(sess, reply_to_id=reply_to_id)
                     sess["rolling"] = False
+                    sess["roll_started_at"] = 0.0
     except Exception:
         async with lock:
             sess["rolling"] = False
+            sess["roll_started_at"] = 0.0
             sess["last_action"] = time.time()
             if sess.get("status") == "playing":
                 try:
-                    sent = await send_msg(chat_id, f"{pe('⚠️')} {mention(sess['turn_uid'])}, <b>tap below to continue your turn:</b>", markup=turn_kb(sess), owner_id=sess["turn_uid"], reply_to=reply_to_id)
+                    sent = await send_msg(chat_id, f"{mention(sess['turn_uid'])}, <b>tap below to continue your turn:</b>", markup=turn_kb(sess), owner_id=sess["turn_uid"], reply_to=reply_to_id)
                     sess["prompt_msg_id"] = sent["message_id"] if sent else 0
                 except Exception:
                     pass
+
+
+async def handle_roll_button(sess: dict, uid: int, order: str, reply_to_id: int = None):
+    lock: asyncio.Lock = sess["lock"]
+    async with lock:
+        if sess.get("status") != "playing":
+            return
+        if sess.get("rolling"):
+            return
+        sess["rolling"] = True
+        sess["roll_started_at"] = time.time()
+        sess["last_action"] = time.time()
+        if sess.get("prompt_msg_id"):
+            asyncio.create_task(clear_buttons(sess["chat_id"], sess["prompt_msg_id"]))
+            sess["prompt_msg_id"] = None
+
+    try:
+        await asyncio.wait_for(_run_roll_worker(sess, uid, order, reply_to_id=reply_to_id), timeout=25.0)
+    except asyncio.TimeoutError:
+        async with lock:
+            sess["rolling"] = False
+            sess["roll_started_at"] = 0.0
+            sess["last_action"] = time.time()
+            if sess.get("status") == "playing":
+                sent = await send_msg(sess["chat_id"], f"{mention(sess['turn_uid'])}, <b>roll timed out — tap below to continue:</b>", markup=turn_kb(sess), owner_id=sess["turn_uid"], reply_to=reply_to_id)
+                sess["prompt_msg_id"] = sent["message_id"] if sent else 0
 
 
 # ================= BACKGROUND TIMERS =================
@@ -1669,10 +1689,19 @@ async def background_verification_check():
 
 async def sweeper():
     while True:
-        await asyncio.sleep(10)
+        await asyncio.sleep(6)
         now = time.time()
         for gid, sess in list(matches.items()):
             try:
+                if sess.get("rolling") and sess.get("roll_started_at") and (now - sess["roll_started_at"] >= 35):
+                    sess["rolling"] = False
+                    sess["roll_started_at"] = 0.0
+                    sess["last_action"] = now
+                    if sess.get("status") == "playing":
+                        sent = await send_msg(sess["chat_id"], f"{mention(sess['turn_uid'])}, <b>turn recovered — tap below to roll:</b>", markup=turn_kb(sess), owner_id=sess["turn_uid"])
+                        if sent and "message_id" in sent:
+                            sess["prompt_msg_id"] = sent["message_id"]
+
                 if sess.get("status") == "waiting" and now - sess.get("created_at", now) >= 120:
                     matches.pop(gid, None)
                     ua = sess["ua"]
@@ -1680,9 +1709,9 @@ async def sweeper():
                     busy.discard(ua)
                     await db_void_game(gid)
                     if sess.get("prompt_msg_id"):
-                        await clear_buttons(sess["chat_id"], sess["prompt_msg_id"])
+                        asyncio.create_task(clear_buttons(sess["chat_id"], sess["prompt_msg_id"]))
                     await send_msg(sess["chat_id"], f"{pe('⏳')} <b>No opponent joined</b> {mention(ua)}'s <b>PvP match — stake refunded.</b>", owner_id=ua)
-                elif sess.get("status") == "playing" and now - sess.get("last_action", now) >= 300:
+                elif sess.get("status") == "playing" and not sess.get("rolling") and now - sess.get("last_action", now) >= 300:
                     await db_void_game(gid)
                     if sess.get("gid_b"):
                         await db_void_game(sess["gid_b"])
@@ -1693,7 +1722,7 @@ async def sweeper():
                         user_match.pop(sess["ub"], None)
                         busy.discard(sess["ub"])
                     if sess.get("prompt_msg_id"):
-                        await clear_buttons(sess["chat_id"], sess["prompt_msg_id"])
+                        asyncio.create_task(clear_buttons(sess["chat_id"], sess["prompt_msg_id"]))
                     try:
                         await send_msg(sess["chat_id"], f"{pe('⏳')} <b>Game timed out due to 5 minutes of inactivity. Stakes refunded.</b>")
                     except Exception:
@@ -1927,7 +1956,6 @@ async def start_cmd(client: Client, message: Message):
     if await check_double_msg(message.from_user.id):
         return
 
-    # Handle giveaway affiliate start parameter: /start gwaff_<gw_id>_<aff_name>
     if len(message.command) > 1 and message.command[1].startswith("gwaff_"):
         payload = message.command[1][len("gwaff_"):]
         if "_" in payload:
@@ -1954,7 +1982,7 @@ async def start_cmd(client: Client, message: Message):
             pass
     welcome_head = TR[lang]["welcome_head"].format(name=html.escape(user["name"]))
     await send_msg(message.chat.id, welcome_head, reply_to=message.id)
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(0.2)
     welcome_body = TR[lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get("bio_link", "No Link Generated"))
     await send_msg(message.chat.id, welcome_body, markup=get_main_menu(lang), disable_web_page_preview=True, owner_id=message.from_user.id)
     if await is_admin(message.from_user.id):
@@ -2631,9 +2659,9 @@ async def games_cmd(client: Client, message: Message):
     if not await is_admin(uid) and not await is_group_authorized(chat_id):
         return
     active_group_games = sum(1 for s in matches.values() if s.get("chat_id") == chat_id and s.get("status") in ["waiting", "playing"])
-    if active_group_games >= 3:
-        msg = await send_msg(chat_id, f"{pe('⏳')} <b>Please wait for the active games to end! Maximum 3 games allowed at once.</b>", reply_to=message.id)
-        await asyncio.sleep(4)
+    if active_group_games >= 4:
+        msg = await send_msg(chat_id, f"{pe('⏳')} <b>Please wait for active games to finish!</b>", reply_to=message.id)
+        await asyncio.sleep(2.5)
         await del_msg(chat_id, msg["message_id"])
         return
 
@@ -2681,7 +2709,7 @@ async def on_dice_received(client: Client, message: Message):
         return
 
     now = time.time()
-    if now - user_last_dice_time.get(uid, 0) < 0.6:
+    if now - user_last_dice_time.get(uid, 0) < 0.4:
         return
     user_last_dice_time[uid] = now
 
@@ -2696,10 +2724,12 @@ async def on_dice_received(client: Client, message: Message):
             return
         sess["last_action"] = time.time()
         sess["rolling"] = True
+        sess["roll_started_at"] = time.time()
         needed = sess["match"].rolls_needed
         rolls_list = sess["u_rolls"] if uid == sess["ua"] else sess["b_rolls"]
         if len(rolls_list) >= needed:
             sess["rolling"] = False
+            sess["roll_started_at"] = 0.0
             return
         rolls_list.append(val)
         rem = needed - len(rolls_list)
@@ -2708,37 +2738,47 @@ async def on_dice_received(client: Client, message: Message):
             sess["prompt_msg_id"] = None
         if rem > 0:
             sess["rolling"] = False
+            sess["roll_started_at"] = 0.0
             sent = await send_msg(chat_id, f"{game_pe(sess['game'])} {mention(uid)}, <b>send {rem} more {sess['game'].title()}!</b>", markup=turn_kb(sess), owner_id=uid, reply_to=message.id)
             sess["prompt_msg_id"] = sent["message_id"] if sent else 0
             return
 
-    await asyncio.sleep(1.1)
+    await asyncio.sleep(0.55)
 
-    if sess["type"] == "bot":
-        if len(sess["b_rolls"]) < needed:
-            b_msg = await send_msg(chat_id, f"{pe('🤖')} <b>{html.escape(CASINO_NAME)}'s turn...</b>", reply_to=message.id)
-            new_b = await send_emoji_roll(chat_id, sess["game"], needed - len(sess["b_rolls"]), reply_to=b_msg["message_id"] if b_msg else message.id, is_bot=True)
-            sess["b_rolls"] += new_b
-        async with sess["lock"]:
-            if sess.get("status") == "playing":
-                await evaluate_round(sess, reply_to_id=message.id)
-            sess["rolling"] = False
-    else:
-        if uid == sess["ua"]:
-            async with sess["lock"]:
-                if sess.get("status") != "playing":
-                    sess["rolling"] = False
-                    return
-                sess["turn_uid"] = sess["ub"]
-                sess["last_action"] = time.time()
-                sess["rolling"] = False
-                sent = await send_msg(chat_id, f"{mention(sess['ub'])}, <b>your turn!</b> {game_pe(sess['game'])}", markup=turn_kb(sess), owner_id=sess["ub"], reply_to=message.id)
-                sess["prompt_msg_id"] = sent["message_id"] if sent else 0
-        else:
+    try:
+        if sess["type"] == "bot":
+            if len(sess["b_rolls"]) < needed:
+                b_msg = await send_msg(chat_id, f"{pe('🤖')} <b>{html.escape(CASINO_NAME)}'s turn...</b>", reply_to=message.id)
+                new_b = await send_emoji_roll(chat_id, sess["game"], needed - len(sess["b_rolls"]), reply_to=b_msg["message_id"] if b_msg else message.id, is_bot=True)
+                sess["b_rolls"] += new_b
             async with sess["lock"]:
                 if sess.get("status") == "playing":
                     await evaluate_round(sess, reply_to_id=message.id)
                 sess["rolling"] = False
+                sess["roll_started_at"] = 0.0
+        else:
+            if uid == sess["ua"]:
+                async with sess["lock"]:
+                    if sess.get("status") != "playing":
+                        sess["rolling"] = False
+                        sess["roll_started_at"] = 0.0
+                        return
+                    sess["turn_uid"] = sess["ub"]
+                    sess["last_action"] = time.time()
+                    sess["rolling"] = False
+                    sess["roll_started_at"] = 0.0
+                    sent = await send_msg(chat_id, f"{mention(sess['ub'])}, <b>your turn!</b> {game_pe(sess['game'])}", markup=turn_kb(sess), owner_id=sess["ub"], reply_to=message.id)
+                    sess["prompt_msg_id"] = sent["message_id"] if sent else 0
+            else:
+                async with sess["lock"]:
+                    if sess.get("status") == "playing":
+                        await evaluate_round(sess, reply_to_id=message.id)
+                    sess["rolling"] = False
+                    sess["roll_started_at"] = 0.0
+    except Exception:
+        async with sess["lock"]:
+            sess["rolling"] = False
+            sess["roll_started_at"] = 0.0
 
 
 # ================= BACKGROUND TRACKERS =================
@@ -2867,6 +2907,7 @@ async def group_activity_tracker(client: Client, message: Message):
         return
 
     today = str(datetime.date.today())
+    user_names[user_id] = full_name
     await users_db.update_one({"user_id": user_id}, {"$set": {"name": full_name}}, upsert=True)
     await activity_db.update_one(
         {"user_id": user_id, "group_id": message.chat.id, "date": today},
@@ -3329,7 +3370,6 @@ async def cb_router(client: Client, call: CallbackQuery):
     if await check_double_cb(uid, f"{chat_id}:{msg_id}:{data}"):
         return await answer_cb(cb_id, show_alert=False)
 
-    # Check button ownership first for owner-bound messages
     shared_prefixes = ("pvp_join:", "rain_join_", "aff_approve_", "aff_reject_", "ldb_", "gw_enter:", "gw_cap:")
     owner = msg_owner.get((chat_id, msg_id))
     if owner and owner != uid and not data.startswith(shared_prefixes):
@@ -3361,13 +3401,11 @@ async def cb_router(client: Client, call: CallbackQuery):
         await answer_cb(cb_id, f"Bonus claimed! +{reward_coins:,} Coins added ({bonus_refs} referrals).", show_alert=True)
         return await edit_msg(chat_id, msg_id, f"{pe('✅')} <b>Bonus Claimed!</b>\n\n<b>+{reward_coins:,} Coins</b> have been added to your coin balance (from <b>{bonus_refs}</b> referrals). Bonus referral count is now reset to 0; come back in 2 hours for more!", markup=None)
 
-    if not data.startswith(("rain_join_", "aff_approve_", "aff_reject_", "gw_enter:", "gw_cap:")):
-        await answer_cb(cb_id, show_alert=False)
-
     # GIVEAWAY WIZARD & MANAGEMENT CALLBACKS
     if data.startswith("gw_"):
         if not await is_admin(uid):
             return await answer_cb(cb_id, "This button is not yours!", show_alert=True)
+        await answer_cb(cb_id, show_alert=False)
         wiz = giveaway_wizard.get(uid)
         if not wiz:
             giveaway_wizard[uid] = {
@@ -3407,7 +3445,7 @@ async def cb_router(client: Client, call: CallbackQuery):
             f_ch = gw_data.get("force_channel") or FSUB_CHANNEL
             await update_giveaway_wizard_msg(
                 uid,
-                f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
+                f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nBanner: Skipped\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
                 kb([("Confirm", "gw_fsub_confirm", "success"), ("Skip", "gw_fsub_skip", "primary")])
             )
         elif data == "gw_fsub_confirm":
@@ -3468,6 +3506,9 @@ async def cb_router(client: Client, call: CallbackQuery):
             await finalize_giveaway(target_gw_id)
             await update_giveaway_wizard_msg(uid, f"{pe('✅')} Giveaway <code>{html.escape(target_gw_id)}</code> ended and winner announced.", kb([("Back", "gw_back_menu", "primary")]))
         return
+
+    if not data.startswith(("rain_join_", "aff_approve_", "aff_reject_", "gw_enter:", "gw_cap:")):
+        await answer_cb(cb_id, show_alert=False)
 
     # GIVEAWAY PARTICIPANT ENTRY & CAPTCHA
     if data.startswith("gw_enter:"):
@@ -3574,8 +3615,8 @@ async def cb_router(client: Client, call: CallbackQuery):
         if uid in busy:
             return await answer_cb(cb_id, "Finish your current game first!", show_alert=True)
         active_group_games = sum(1 for s in matches.values() if s.get("chat_id") == chat_id and s.get("status") in ["waiting", "playing"])
-        if active_group_games >= 3:
-            return await answer_cb(cb_id, "Please wait for the active games to end! Maximum 3 games allowed at once.", show_alert=True)
+        if active_group_games >= 4:
+            return await answer_cb(cb_id, "Please wait for active games to finish!", show_alert=True)
 
         user = await get_or_create_user(uid, call.from_user)
         bal = float(user.get("coin_balance", 0.0))
@@ -3591,11 +3632,11 @@ async def cb_router(client: Client, call: CallbackQuery):
 
         if who == "bot":
             m_obj = Match(game, mode, target, stake, (uid, 0))
-            sess = {"gid": gid, "type": "bot", "status": "playing", "chat_id": chat_id, "game": game, "mode": mode, "target": target, "stake": stake, "ua": uid, "ub": 0, "match": m_obj, "turn_uid": uid, "u_rolls": [], "b_rolls": [], "rolling": False, "round_num": 1, "last_action": time.time(), "lock": asyncio.Lock(), "prompt_msg_id": msg_id}
+            sess = {"gid": gid, "type": "bot", "status": "playing", "chat_id": chat_id, "game": game, "mode": mode, "target": target, "stake": stake, "ua": uid, "ub": 0, "match": m_obj, "turn_uid": uid, "u_rolls": [], "b_rolls": [], "rolling": False, "roll_started_at": 0.0, "round_num": 1, "last_action": time.time(), "lock": asyncio.Lock(), "prompt_msg_id": msg_id}
             matches[gid] = sess
             await edit_msg(chat_id, msg_id, f"{pe('🌊')} <b>The game has started</b>\n\n<b>Player 1:</b> {mention(uid)}\n<b>Player 2:</b> {pe('🤖')} <b>{html.escape(CASINO_NAME)}</b>\n<b>Bet: {usd(stake)}</b> {pe('🪙')}\n<b>Mode: {get_mode_label(mode)} — {target} points</b>\n\n<b>Roll the {game.title()}</b> {game_pe(game)}", markup=turn_kb(sess, show_bot_first=True, is_round_start=True), owner_id=uid)
         else:
-            sess = {"gid": gid, "type": "pvp", "status": "waiting", "chat_id": chat_id, "game": game, "mode": mode, "target": target, "stake": stake, "ua": uid, "ub": 0, "u_rolls": [], "b_rolls": [], "rolling": False, "round_num": 1, "created_at": time.time(), "last_action": time.time(), "lock": asyncio.Lock(), "prompt_msg_id": msg_id}
+            sess = {"gid": gid, "type": "pvp", "status": "waiting", "chat_id": chat_id, "game": game, "mode": mode, "target": target, "stake": stake, "ua": uid, "ub": 0, "u_rolls": [], "b_rolls": [], "rolling": False, "roll_started_at": 0.0, "round_num": 1, "created_at": time.time(), "last_action": time.time(), "lock": asyncio.Lock(), "prompt_msg_id": msg_id}
             matches[gid] = sess
             await edit_msg(chat_id, msg_id, f"{pe('🎮')} <b>PvP Match Created</b>\n\n<b>Player 1:</b> {mention(uid)}\n<b>Game:</b> {game_pe(game)} <b>{game.title()}</b>\n<b>Bet: {usd(stake)}</b> {pe('🪙')}\n<b>Mode: {get_mode_label(mode)} — {target} points</b>\n\n<i>Click «Accept game» to start PvP!</i>", markup=kb([("Accept game", f"pvp_join:{gid}", "success", "✅")], [("Cancel game", f"cancel_pvp:{gid}", "danger", "❌")]), owner_id=uid)
         return
@@ -3631,7 +3672,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         user_match[uid] = gid
 
         start_txt = f"{pe('🌊')} <b>The game has started</b>\n\n<b>Player 1:</b> {mention(sess['ua'])}\n<b>Player 2:</b> {mention(uid)}\n<b>Bet: {usd(stake)}</b> {pe('🪙')}\n<b>Mode: {get_mode_label(sess['mode'])} — {sess['target']} points</b>\n\n{mention(sess['ua'])}, <b>your turn!</b>"
-        await clear_buttons(chat_id, msg_id)
+        asyncio.create_task(clear_buttons(chat_id, msg_id))
         sent = await send_msg(chat_id, start_txt, markup=turn_kb(sess, show_bot_first=False, is_round_start=True), owner_id=sess["ua"])
         sess["prompt_msg_id"] = sent["message_id"] if sent else 0
         return
@@ -3653,6 +3694,9 @@ async def cb_router(client: Client, call: CallbackQuery):
         sess = matches.get(gid_str)
         if not sess or sess.get("status") != "playing":
             return
+        if sess.get("rolling") and sess.get("roll_started_at") and (time.time() - sess["roll_started_at"] >= 35):
+            sess["rolling"] = False
+            sess["roll_started_at"] = 0.0
         if sess.get("turn_uid") != uid:
             return
         needed = sess["match"].rolls_needed
@@ -3782,7 +3826,7 @@ async def cb_router(client: Client, call: CallbackQuery):
         user = await get_or_create_user(uid, call.from_user)
         welcome_body = TR[new_lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get("bio_link", ""))
         await edit_msg(chat_id, msg_id, TR[new_lang]["lang_set"])
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.2)
         await send_msg(chat_id, welcome_body, markup=get_main_menu(new_lang), disable_web_page_preview=True, owner_id=uid)
 
     elif data == "menu_leaderboard":
@@ -4021,49 +4065,80 @@ async def cb_router(client: Client, call: CallbackQuery):
         return await answer_cb(cb_id)
 
 
-@app.on_message(filters.private & ~filters.regex(r"^/"))
-async def plain_text_handler(client: Client, message: Message):
+# ================= DEDICATED GIVEAWAY WIZARD HANDLER (TEXT + PHOTO + DOC) =================
+@app.on_message(filters.private & ~filters.command([
+    "start", "help", "lang", "verify", "affiliate", "leaderboard", "daily",
+    "weekly", "monthly", "rank", "myrank", "balance", "bal", "bonus", "tip",
+    "support", "close", "profile", "stats", "anonymous", "announumus",
+    "withdraw", "draw", "mines", "mns", "giveaway", "adminhelp", "botban",
+    "givewayref", "affiliategiveway", "givewaycheck", "affiliategivewaycheck",
+    "addreffer", "access", "revoke", "race", "refferal", "report", "reportbot",
+    "coinsreport", "balancereport", "resetamount", "resetbal", "depo",
+    "revokeall", "toggleaffiliate", "withdrawupdate", "toggledraw",
+    "drawsettings", "redraw", "addadmin", "removeadmin", "adminlist",
+    "setprice", "togglewithdraw", "broadcast", "check", "checkactivity",
+    "affiliatecheck"
+]), group=-1)
+async def giveaway_wizard_input_handler(client: Client, message: Message):
     if not message.from_user:
         return
-    if await is_bot_banned(message.from_user.id):
-        return
-    if await check_double_msg(message.from_user.id):
-        return
-
     uid = message.from_user.id
-    lang = await get_lang(uid)
-    safe_name = html.escape(message.from_user.first_name or "User")
+    wiz = giveaway_wizard.get(uid)
+    if not wiz or not wiz.get("step"):
+        return
+    if not await is_admin(uid):
+        return
 
-    # GIVEAWAY WIZARD INPUTS (supports both text and banner photos)
-    if uid in giveaway_wizard and giveaway_wizard[uid].get("step") and await is_admin(uid):
-        wiz = giveaway_wizard[uid]
-        step = wiz["step"]
-        gw_data = wiz["data"]
-        try:
-            await message.delete()
-        except Exception:
-            pass
+    step = wiz["step"]
+    gw_data = wiz["data"]
+    wiz["dm_chat_id"] = message.chat.id
 
-        if step == "wait_host" and message.text:
-            gw_data["host"] = message.text.strip()
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    try:
+        if step == "wait_host":
+            val = (message.text or message.caption or "").strip()
+            if not val:
+                return
+            gw_data["host"] = val
             wiz["step"] = "wait_amount"
-            await update_giveaway_wizard_msg(uid, f"{pe('💰')} <b>Enter Giveaway Amount / Prize Pool</b> (e.g. <code>$500</code> or <code>5000 Coins</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+            await update_giveaway_wizard_msg(
+                uid,
+                f"{pe('💰')} <b>Enter Giveaway Amount / Prize Pool</b> (e.g. <code>$500</code> or <code>5000 Coins</code>):",
+                kb([("Cancel", "gw_back_menu", "danger")])
+            )
+            message.stop_propagation()
             return
 
-        if step == "wait_amount" and message.text:
-            gw_data["amount"] = message.text.strip()
+        if step == "wait_amount":
+            val = (message.text or message.caption or "").strip()
+            if not val:
+                return
+            gw_data["amount"] = val
             wiz["step"] = "wait_title"
-            await update_giveaway_wizard_msg(uid, f"{pe('🎉')} <b>Enter Giveaway Title</b> (e.g. <code>500$ GIVEAWAY</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+            await update_giveaway_wizard_msg(
+                uid,
+                f"{pe('🎉')} <b>Enter Giveaway Title</b> (e.g. <code>500$ GIVEAWAY</code>):",
+                kb([("Cancel", "gw_back_menu", "danger")])
+            )
+            message.stop_propagation()
             return
 
-        if step == "wait_title" and message.text:
-            gw_data["title"] = message.text.strip()
+        if step == "wait_title":
+            val = (message.text or message.caption or "").strip()
+            if not val:
+                return
+            gw_data["title"] = val
             wiz["step"] = "wait_banner"
             await update_giveaway_wizard_msg(
                 uid,
                 f"{pe('🖼')} <b>Send Banner Photo</b> for the giveaway (or tap <b>Skip</b>):",
                 kb([("Skip", "gw_skip_banner", "primary"), ("Cancel", "gw_back_menu", "danger")])
             )
+            message.stop_propagation()
             return
 
         if step == "wait_banner":
@@ -4073,41 +4148,53 @@ async def plain_text_handler(client: Client, message: Message):
             elif getattr(message, "document", None) and message.document.mime_type and message.document.mime_type.startswith("image/"):
                 photo_id = message.document.file_id
 
-            if photo_id:
-                gw_data["photo_file_id"] = photo_id
-                wiz["step"] = "force_channel"
-                f_ch = gw_data.get("force_channel") or FSUB_CHANNEL
+            if not photo_id:
                 await update_giveaway_wizard_msg(
                     uid,
-                    f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nBanner: Saved ✅\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
-                    kb([("Confirm", "gw_fsub_confirm", "success"), ("Skip", "gw_fsub_skip", "primary")])
-                )
-            else:
-                await update_giveaway_wizard_msg(
-                    uid,
-                    f"{pe('⚠️')} Please send a valid <b>photo</b> for the banner, or tap <b>Skip</b>:",
+                    f"{pe('⚠️')} Please send a <b>Photo</b> for the banner, or tap <b>Skip</b> below:",
                     kb([("Skip", "gw_skip_banner", "primary"), ("Cancel", "gw_back_menu", "danger")])
                 )
+                message.stop_propagation()
+                return
+
+            gw_data["photo_file_id"] = photo_id
+            wiz["step"] = "force_channel"
+            f_ch = gw_data.get("force_channel") or FSUB_CHANNEL
+            await update_giveaway_wizard_msg(
+                uid,
+                f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nBanner: Saved ✅\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
+                kb([("Confirm", "gw_fsub_confirm", "success"), ("Skip", "gw_fsub_skip", "primary")])
+            )
+            message.stop_propagation()
             return
 
-        if step == "wait_minmsg" and message.text:
+        if step == "wait_minmsg":
+            txt = (message.text or "").strip()
             try:
-                gw_data["min_messages"] = max(0, int(message.text.strip()))
+                gw_data["min_messages"] = max(0, int(txt))
             except ValueError:
                 gw_data["min_messages"] = 0
             wiz["step"] = "conditions"
             c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
             await update_giveaway_wizard_msg(uid, c_txt, c_kb)
+            message.stop_propagation()
             return
 
-        if step == "wait_notes" and message.text:
-            gw_data["notes"] = message.text.strip()
+        if step == "wait_notes":
+            gw_data["notes"] = (message.text or message.caption or "").strip()
             wiz["step"] = "wait_duration"
-            await update_giveaway_wizard_msg(uid, f"{pe('⏱')} <b>Enter giveaway duration</b> (e.g. <code>1m</code>, <code>1h</code>, <code>1d</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+            await update_giveaway_wizard_msg(
+                uid,
+                f"{pe('⏱')} <b>Enter giveaway duration</b> (e.g. <code>1m</code>, <code>1h</code>, <code>1d</code>):",
+                kb([("Cancel", "gw_back_menu", "danger")])
+            )
+            message.stop_propagation()
             return
 
-        if step == "wait_duration" and message.text:
-            dur_str = message.text.strip()
+        if step == "wait_duration":
+            dur_str = (message.text or "").strip()
+            if not dur_str:
+                return
             dur_secs = parse_duration_seconds(dur_str)
             now_ts = time.time()
             gw_id = f"gw_{int(now_ts)}_{random.randint(1000, 9999)}"
@@ -4162,112 +4249,126 @@ async def plain_text_handler(client: Client, message: Message):
                 f"{pe('✅')} <b>Giveaway Published!</b>\n\n🎉 <b>Title:</b> {html.escape(gw_doc['title'])}\n💰 <b>Prize:</b> {html.escape(gw_doc['amount'])}\n⏱ <b>Duration:</b> <code>{html.escape(dur_str)}</code>\n📍 <b>Posts Sent:</b> {len(posted_locs)}",
                 kb([("Manage Giveaway", "gw_manage", "primary"), ("Start New Giveaway", "gw_start_new", "success")])
             )
+            message.stop_propagation()
             return
+    except Exception as e:
+        print(f"Giveaway wizard error at step {step}: {e}")
+        await send_msg(uid, f"{pe('⚠️')} Wizard error at step <code>{html.escape(str(step))}</code>: {html.escape(str(e))}")
+        message.stop_propagation()
 
-    if not message.text:
+
+# ================= PLAIN TEXT & TICKET CHAT HANDLER =================
+@app.on_message(filters.text & filters.private & ~filters.regex(r"^/"))
+async def plain_text_handler(client: Client, message: Message):
+    user_id = message.from_user.id
+    if await is_bot_banned(user_id):
+        return
+    if user_id in active_tickets:
+        target_id = active_tickets[user_id]
+        try:
+            await send_msg(target_id, f"{pe('💬')} <b>Message:</b>\n{html.escape(message.text)}")
+        except Exception as e:
+            await send_msg(message.chat.id, f"{pe('❌')} Failed to send: {e}")
         return
 
-    if uid in user_states:
-        state_data = user_states[uid]
-        state = state_data.get("state")
+    if user_id in user_states:
+        state_data = user_states[user_id]
+        state = state_data["state"]
 
-        if state == "wait_for_wd_amount":
+        if state == "wait_for_support":
+            lang = await get_lang(user_id)
+            ticket_id = f"#TKT{random.randint(1000, 9999)}"
+            pending_tickets[user_id] = ticket_id
+            del user_states[user_id]
+            safe_name = html.escape(message.from_user.first_name or "User")
+            admin_msg = f"{pe('🎟')} <b>NEW SUPPORT TICKET: {ticket_id}</b>\n\n<b>From:</b> <a href='tg://user?id={user_id}'>{safe_name}</a> (<code>{user_id}</code>)\n<b>Issue:</b>\n{html.escape(message.text)}"
+            btns = kb([("Accept", f"tktacc_{user_id}", "success"), ("Reject", f"tktrej_{user_id}", "danger")])
+            admin_ticket_msgs[user_id] = {}
+            admins = await admins_db.find().to_list(length=100)
+            admin_ids = set(a["user_id"] for a in admins)
+            admin_ids.add(OWNER_ID)
+            for aid in admin_ids:
+                try:
+                    sent = await send_msg(aid, admin_msg, markup=btns)
+                    if sent:
+                        admin_ticket_msgs[user_id][aid] = sent["message_id"]
+                except Exception:
+                    pass
+            await send_msg(message.chat.id, TR[lang]["sup_sent"].format(tkt=ticket_id))
+
+        elif state == "wait_for_wd_amount":
             try:
                 amt = float(message.text.replace("$", "").strip())
-                user = await get_or_create_user(uid, message.from_user)
+                user = await get_or_create_user(user_id)
                 conf = await get_config()
                 min_wd = float(conf.get("min_withdrawal", 20.0))
                 bal = float(user.get("balance", 0.0))
-                if amt < min_wd:
-                    return await send_msg(message.chat.id, f"{pe('❌')} Minimum withdrawal amount is {usd(min_wd)}.")
-                if amt > bal:
-                    return await send_msg(message.chat.id, f"{pe('❌')} Insufficient real balance! You have {usd(bal)}.")
-                state_data["amount"] = amt
-                state_data["state"] = "wait_for_address"
+                if amt < min_wd or amt > bal:
+                    return await send_msg(message.chat.id, f"{pe('❌')} Invalid amount. Enter between {usd(min_wd)} and {usd(bal)}.")
+                user_states[user_id] = {"state": "wait_for_address", "amount": amt}
+                lang = await get_lang(user_id)
                 await send_msg(message.chat.id, TR[lang]["wd_addr"])
-            except ValueError:
-                await send_msg(message.chat.id, f"{pe('❌')} Invalid amount. Enter a valid number.")
-            return
+            except Exception:
+                await send_msg(message.chat.id, f"{pe('❌')} Enter a valid number.")
 
         elif state == "wait_for_address":
             addr = message.text.strip()
             amt = state_data["amount"]
-            del user_states[uid]
-            await users_db.update_one({"user_id": uid}, {"$inc": {"balance": -amt, "total_withdrawn": amt}})
-            await send_msg(message.chat.id, f"{pe('✅')} <b>Withdrawal Request Submitted!</b>\n\nAmount: {usd(amt)}\nAddress: <code>{html.escape(addr)}</code>\n\nPlease wait for admin approval.")
-            admins = await admins_db.find().to_list(100)
-            admin_ids = [a["user_id"] for a in admins] + [OWNER_ID]
-            wd_text = f"{pe('💸')} <b>New Withdrawal Request</b>\n\nUser: <a href='tg://user?id={uid}'>{safe_name}</a> (<code>{uid}</code>)\nAmount: <b>{usd(amt)}</b>\nAddress: <code>{html.escape(addr)}</code>"
-            wd_btns = kb([("Done", f"wdone_{uid}_{amt}", "success"), ("Reject", f"wrej_{uid}_{amt}", "danger")])
-            admin_withdraw_msgs[uid] = {}
-            for aid in set(admin_ids):
+            del user_states[user_id]
+            res = await users_db.update_one({"user_id": user_id, "balance": {"$gte": amt}}, {"$inc": {"balance": -amt, "total_withdrawn": amt}})
+            if res.modified_count == 0:
+                return await send_msg(message.chat.id, f"{pe('❌')} Insufficient real balance or withdrawal already processed.")
+            safe_name = html.escape(message.from_user.first_name or "User")
+            admin_msg = f"{pe('💸')} <b>NEW WITHDRAWAL REQUEST</b>\n\n<b>User:</b> <a href='tg://user?id={user_id}'>{safe_name}</a> (<code>{user_id}</code>)\n<b>Amount:</b> {usd(amt)}\n<b>TON Address:</b> <code>{html.escape(addr)}</code>"
+            btns = kb([("Done", f"wdone_{user_id}_{amt}", "success"), ("Reject", f"wrej_{user_id}_{amt}", "danger")])
+            admin_withdraw_msgs[user_id] = {}
+            admins = await admins_db.find().to_list(length=100)
+            admin_ids = set(a["user_id"] for a in admins)
+            admin_ids.add(OWNER_ID)
+            for aid in admin_ids:
                 try:
-                    sent = await send_msg(aid, wd_text, markup=wd_btns)
+                    sent = await send_msg(aid, admin_msg, markup=btns)
                     if sent:
-                        admin_withdraw_msgs[uid][aid] = sent["message_id"]
+                        admin_withdraw_msgs[user_id][aid] = sent["message_id"]
                 except Exception:
                     pass
-            return
+            await send_msg(message.chat.id, f"{pe('✅')} Withdrawal request for {usd(amt)} sent to admins for processing.")
 
         elif state == "wait_for_txlink":
             tx_link = message.text.strip()
             target_id = state_data["target_id"]
-            amt = state_data["amount"]
-            del user_states[uid]
-            await send_msg(target_id, f"{pe('✅')} <b>Withdrawal Approved & Sent!</b>\n\nAmount: {amt}\nTransaction: {html.escape(tx_link)}")
-            await send_msg(message.chat.id, f"{pe('✅')} User <code>{target_id}</code> notified with transaction link.")
-            return
+            amount = state_data["amount"]
+            del user_states[user_id]
+            user_msg = f"{pe('✅')} <b>Withdrawal Completed!</b>\n\n<b>Amount:</b> {usd(float(amount))}\n<b>Transaction Link:</b> {html.escape(tx_link)}"
+            try:
+                await send_msg(target_id, user_msg, disable_web_page_preview=False)
+                await send_msg(message.chat.id, f"{pe('✅')} Transaction link sent to user <code>{target_id}</code>.")
+            except Exception as e:
+                await send_msg(message.chat.id, f"{pe('❌')} Failed to notify user: {e}")
 
         elif state == "wait_for_reason":
             reason = message.text.strip()
             target_id = state_data["target_id"]
-            amt = float(state_data["amount"])
-            del user_states[uid]
-            await users_db.update_one({"user_id": target_id}, {"$inc": {"balance": amt, "total_withdrawn": -amt}})
+            amount = state_data["amount"]
+            del user_states[user_id]
+            await users_db.update_one({"user_id": target_id}, {"$inc": {"balance": float(amount), "total_withdrawn": -float(amount)}})
             t_lang = await get_lang(target_id)
-            await send_msg(target_id, TR[t_lang]["wd_rej"].format(amount=usd(amt), reason=html.escape(reason)))
-            await send_msg(message.chat.id, f"{pe('✅')} Rejection sent to <code>{target_id}</code> and funds refunded.")
-            return
-
-        elif state == "wait_for_support":
-            del user_states[uid]
-            tkt_num = f"#TKT{random.randint(1000, 9999)}"
-            pending_tickets[uid] = {"text": message.text, "tkt": tkt_num}
-            await send_msg(message.chat.id, TR[lang]["sup_sent"].format(tkt=tkt_num))
-            admins = await admins_db.find().to_list(100)
-            admin_ids = [a["user_id"] for a in admins] + [OWNER_ID]
-            tkt_text = f"{pe('🎟')} <b>New Support Ticket ({tkt_num})</b>\n\nFrom: <a href='tg://user?id={uid}'>{safe_name}</a> (<code>{uid}</code>)\n\n<b>Issue:</b>\n{html.escape(message.text)}"
-            tkt_btns = kb([("Accept", f"tktacc_{uid}", "success"), ("Reject", f"tktrej_{uid}", "danger")])
-            admin_ticket_msgs[uid] = {}
-            for aid in set(admin_ids):
-                try:
-                    sent = await send_msg(aid, tkt_text, markup=tkt_btns)
-                    if sent:
-                        admin_ticket_msgs[uid][aid] = sent["message_id"]
-                except Exception:
-                    pass
-            return
-
-    if uid in active_tickets:
-        partner_id = active_tickets[uid]
-        try:
-            await message.copy(partner_id)
-        except Exception:
-            await send_msg(message.chat.id, f"{pe('❌')} Failed to deliver message.")
-        return
-
-    if not await pass_fsub(client, message):
-        return
+            try:
+                await send_msg(target_id, TR[t_lang]["wd_rej"].format(amount=amount, reason=html.escape(reason)))
+                await send_msg(message.chat.id, f"{pe('✅')} User <code>{target_id}</code> notified and funds refunded.")
+            except Exception as e:
+                await send_msg(message.chat.id, f"{pe('❌')} Failed to notify user: {e}")
 
 
-# ================= KEEP ALIVE WEB SERVER =================
-async def start_health_server():
-    async def health(request):
-        return web.Response(text="OK")
-    app_web = web.Application()
-    app_web.router.add_get("/", health)
-    app_web.router.add_get("/health", health)
-    runner = web.AppRunner(app_web)
+# ================= WEB SERVER & RUNNER =================
+async def health_check(request):
+    return web.Response(text="Bot is alive and running!")
+
+
+async def run_web_server():
+    server = web.Application()
+    server.router.add_get("/", health_check)
+    runner = web.AppRunner(server)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, "0.0.0.0", port)
@@ -4276,31 +4377,31 @@ async def start_health_server():
 
 async def main():
     global BOT_USERNAME
-    await start_health_server()
+    await get_session()
+    asyncio.create_task(run_web_server())
     await app.start()
     me = await app.get_me()
     BOT_USERNAME = me.username or ""
+    await auth_groups_db.update_one({"chat_id": TRACK_GROUP_ID}, {"$set": {"authorized": True}}, upsert=True)
+    auth_groups_cache.add(TRACK_GROUP_ID)
 
-    # Load banned users into cache
-    banned_docs = await users_db.find({"bot_banned": True}, {"user_id": 1}).to_list(length=None)
-    for bd in banned_docs:
-        bot_banned_cache.add(bd["user_id"])
-
-    # Resume any active giveaways
     active_gws = await giveaways_db.find({"status": "active"}).to_list(length=None)
-    for gw in active_gws:
-        asyncio.create_task(giveaway_countdown_task(gw["_id"]))
+    for g in active_gws:
+        asyncio.create_task(giveaway_countdown_task(g["_id"]))
 
     asyncio.create_task(background_verification_check())
-    asyncio.create_task(sweeper())
     asyncio.create_task(weekly_race_timer_task())
     asyncio.create_task(weekly_refferal_race_timer_task())
-    print(f"🚀 Bot @{BOT_USERNAME} started successfully!")
+    asyncio.create_task(sweeper())
+    print("Bot Started Successfully!")
     await idle()
-    await app.stop()
     if HTTP_SESSION and not HTTP_SESSION.closed:
         await HTTP_SESSION.close()
+    await app.stop()
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped.")
