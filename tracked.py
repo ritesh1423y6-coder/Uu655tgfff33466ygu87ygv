@@ -1927,7 +1927,6 @@ async def start_cmd(client: Client, message: Message):
     if await check_double_msg(message.from_user.id):
         return
 
-    # Handle giveaway affiliate start parameter: /start gwaff_<gw_id>_<aff_name>
     if len(message.command) > 1 and message.command[1].startswith("gwaff_"):
         payload = message.command[1][len("gwaff_"):]
         if "_" in payload:
@@ -3407,7 +3406,7 @@ async def cb_router(client: Client, call: CallbackQuery):
             f_ch = gw_data.get("force_channel") or FSUB_CHANNEL
             await update_giveaway_wizard_msg(
                 uid,
-                f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
+                f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nBanner: Skipped\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
                 kb([("Confirm", "gw_fsub_confirm", "success"), ("Skip", "gw_fsub_skip", "primary")])
             )
         elif data == "gw_fsub_confirm":
@@ -4039,39 +4038,19 @@ async def plain_text_handler(client: Client, message: Message):
         wiz = giveaway_wizard[uid]
         step = wiz["step"]
         gw_data = wiz["data"]
-        try:
-            await message.delete()
-        except Exception:
-            pass
-
-        if step == "wait_host" and message.text:
-            gw_data["host"] = message.text.strip()
-            wiz["step"] = "wait_amount"
-            await update_giveaway_wizard_msg(uid, f"{pe('💰')} <b>Enter Giveaway Amount / Prize Pool</b> (e.g. <code>$500</code> or <code>5000 Coins</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
-            return
-
-        if step == "wait_amount" and message.text:
-            gw_data["amount"] = message.text.strip()
-            wiz["step"] = "wait_title"
-            await update_giveaway_wizard_msg(uid, f"{pe('🎉')} <b>Enter Giveaway Title</b> (e.g. <code>500$ GIVEAWAY</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
-            return
-
-        if step == "wait_title" and message.text:
-            gw_data["title"] = message.text.strip()
-            wiz["step"] = "wait_banner"
-            await update_giveaway_wizard_msg(
-                uid,
-                f"{pe('🖼')} <b>Send Banner Photo</b> for the giveaway (or tap <b>Skip</b>):",
-                kb([("Skip", "gw_skip_banner", "primary"), ("Cancel", "gw_back_menu", "danger")])
-            )
-            return
+        wiz["dm_chat_id"] = message.chat.id
 
         if step == "wait_banner":
             photo_id = None
             if getattr(message, "photo", None):
                 photo_id = message.photo.file_id
-            elif getattr(message, "document", None) and message.document.mime_type and message.document.mime_type.startswith("image/"):
+            elif getattr(message, "document", None) and getattr(message.document, "mime_type", "").startswith("image/"):
                 photo_id = message.document.file_id
+
+            try:
+                await message.delete()
+            except Exception:
+                pass
 
             if photo_id:
                 gw_data["photo_file_id"] = photo_id
@@ -4079,44 +4058,61 @@ async def plain_text_handler(client: Client, message: Message):
                 f_ch = gw_data.get("force_channel") or FSUB_CHANNEL
                 await update_giveaway_wizard_msg(
                     uid,
-                    f"{pe('📢')} <b>Force Channel & Group Join</b>\n\nBanner: Saved ✅\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
+                    f"{pe('✅')} <b>Banner photo saved!</b>\n\n{pe('📢')} <b>Force Channel & Group Join</b>\nAuto-selected Channel: <code>{html.escape(f_ch)}</code>\nGroup: Enabled\n\nConfirm or Skip channel force join?",
                     kb([("Confirm", "gw_fsub_confirm", "success"), ("Skip", "gw_fsub_skip", "primary")])
                 )
             else:
                 await update_giveaway_wizard_msg(
                     uid,
-                    f"{pe('⚠️')} Please send a valid <b>photo</b> for the banner, or tap <b>Skip</b>:",
+                    f"{pe('⚠️')} <b>Please send a valid Banner Photo</b> (or tap <b>Skip</b> below):",
                     kb([("Skip", "gw_skip_banner", "primary"), ("Cancel", "gw_back_menu", "danger")])
                 )
             return
 
-        if step == "wait_minmsg" and message.text:
+        if not message.text:
+            return
+        val_txt = message.text.strip()
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if step == "wait_host":
+            gw_data["host"] = val_txt
+            wiz["step"] = "wait_amount"
+            await update_giveaway_wizard_msg(uid, f"{pe('💰')} <b>Enter Giveaway Amount / Prize Pool</b> (e.g. <code>$50</code> or <code>5,000 Coins</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+        elif step == "wait_amount":
+            gw_data["amount"] = val_txt
+            wiz["step"] = "wait_title"
+            await update_giveaway_wizard_msg(uid, f"{pe('🎉')} <b>Enter Giveaway Title</b> (e.g. <code>WEEKLY SPECIAL GIVEAWAY</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
+        elif step == "wait_title":
+            gw_data["title"] = val_txt
+            wiz["step"] = "wait_banner"
+            await update_giveaway_wizard_msg(uid, f"{pe('🖼')} <b>Send Banner Photo</b> for the giveaway (or tap <b>Skip</b>):", kb([("Skip", "gw_skip_banner", "primary"), ("Cancel", "gw_back_menu", "danger")]))
+        elif step == "wait_minmsg":
             try:
-                gw_data["min_messages"] = max(0, int(message.text.strip()))
+                gw_data["min_messages"] = max(0, int(val_txt))
             except ValueError:
                 gw_data["min_messages"] = 0
             wiz["step"] = "conditions"
             c_txt, c_kb = build_giveaway_wizard_conditions_ui(uid, gw_data)
             await update_giveaway_wizard_msg(uid, c_txt, c_kb)
-            return
-
-        if step == "wait_notes" and message.text:
-            gw_data["notes"] = message.text.strip()
+        elif step == "wait_notes":
+            gw_data["notes"] = val_txt
             wiz["step"] = "wait_duration"
             await update_giveaway_wizard_msg(uid, f"{pe('⏱')} <b>Enter giveaway duration</b> (e.g. <code>1m</code>, <code>1h</code>, <code>1d</code>):", kb([("Cancel", "gw_back_menu", "danger")]))
-            return
+        elif step == "wait_duration":
+            dur_sec = parse_duration_seconds(val_txt)
+            end_ts = time.time() + dur_sec
+            gw_id = f"gw_{int(time.time())}_{random.randint(100, 999)}"
+            target_chat = gw_data.get("target_chat_id", TRACK_GROUP_ID)
 
-        if step == "wait_duration" and message.text:
-            dur_str = message.text.strip()
-            dur_secs = parse_duration_seconds(dur_str)
-            now_ts = time.time()
-            gw_id = f"gw_{int(now_ts)}_{random.randint(1000, 9999)}"
-            gw_doc = {
+            doc = {
                 "_id": gw_id,
                 "status": "active",
-                "target_chat_id": gw_data.get("target_chat_id", TRACK_GROUP_ID),
+                "target_chat_id": target_chat,
                 "host": gw_data.get("host", "@redcube"),
-                "amount": gw_data.get("amount", "$100"),
+                "amount": gw_data.get("amount", "$10"),
                 "title": gw_data.get("title", "GIVEAWAY"),
                 "photo_file_id": gw_data.get("photo_file_id"),
                 "force_channel": gw_data.get("force_channel"),
@@ -4124,85 +4120,132 @@ async def plain_text_handler(client: Client, message: Message):
                 "cond_name": gw_data.get("cond_name", False),
                 "cond_bio": gw_data.get("cond_bio", False),
                 "cond_premium": gw_data.get("cond_premium", False),
-                "min_messages": gw_data.get("min_messages", 0),
-                "captcha": gw_data.get("captcha", True),
+                "min_messages": int(gw_data.get("min_messages", 0) or 0),
+                "captcha": bool(gw_data.get("captcha", True)),
                 "notes": gw_data.get("notes", ""),
-                "start_time": now_ts,
-                "end_time": now_ts + dur_secs,
+                "end_time": end_ts,
                 "participants": [],
                 "affiliate_links": {},
                 "affiliates_by_name": {},
                 "posts": []
             }
 
-            post_text = build_giveaway_post_text(gw_doc)
+            post_text = build_giveaway_post_text(doc)
             post_kb = kb([("Enter giveaway", f"gw_enter:{gw_id}", "success")])
-            dest_chats = list(dict.fromkeys([gw_doc["target_chat_id"], TRACK_GROUP_ID]))
-            posted_locs = []
+            posts_locs = []
 
-            for d_chat in dest_chats:
+            if doc.get("photo_file_id"):
                 try:
-                    if gw_doc.get("photo_file_id"):
-                        res = await tg("sendPhoto", chat_id=d_chat, photo=gw_doc["photo_file_id"], caption=post_text, reply_markup=post_kb, parse_mode="HTML")
-                        if res and "message_id" in res:
-                            posted_locs.append({"chat_id": d_chat, "message_id": res["message_id"], "has_photo": True})
-                    else:
-                        res = await send_msg(d_chat, post_text, markup=post_kb)
-                        if res and "message_id" in res:
-                            posted_locs.append({"chat_id": d_chat, "message_id": res["message_id"], "has_photo": False})
+                    sent_p = await tg("sendPhoto", chat_id=target_chat, photo=doc["photo_file_id"], caption=post_text, reply_markup=post_kb, parse_mode="HTML")
+                    if sent_p and "message_id" in sent_p:
+                        posts_locs.append({"chat_id": target_chat, "message_id": sent_p["message_id"], "has_photo": True})
+                        try:
+                            await tg("pinChatMessage", chat_id=target_chat, message_id=sent_p["message_id"], disable_notification=True)
+                        except Exception:
+                            pass
                 except Exception as e:
-                    print(f"Giveaway post error in {d_chat}: {e}")
+                    print(f"Failed sending giveaway photo to group: {e}")
 
-            gw_doc["posts"] = posted_locs
-            await giveaways_db.insert_one(gw_doc)
+            if not posts_locs:
+                sent_t = await send_msg(target_chat, post_text, markup=post_kb)
+                if sent_t and "message_id" in sent_t:
+                    posts_locs.append({"chat_id": target_chat, "message_id": sent_t["message_id"], "has_photo": False})
+                    try:
+                        await tg("pinChatMessage", chat_id=target_chat, message_id=sent_t["message_id"], disable_notification=True)
+                    except Exception:
+                        pass
+
+            doc["posts"] = posts_locs
+            await giveaways_db.insert_one(doc)
             wiz["step"] = None
             asyncio.create_task(giveaway_countdown_task(gw_id))
-            await update_giveaway_wizard_msg(
-                uid,
-                f"{pe('✅')} <b>Giveaway Published!</b>\n\n🎉 <b>Title:</b> {html.escape(gw_doc['title'])}\n💰 <b>Prize:</b> {html.escape(gw_doc['amount'])}\n⏱ <b>Duration:</b> <code>{html.escape(dur_str)}</code>\n📍 <b>Posts Sent:</b> {len(posted_locs)}",
-                kb([("Manage Giveaway", "gw_manage", "primary"), ("Start New Giveaway", "gw_start_new", "success")])
-            )
-            return
+            await update_giveaway_wizard_msg(uid, f"{pe('✅')} <b>Giveaway Published & Pinned!</b>\n\nID: <code>{gw_id}</code>\nTitle: <b>{html.escape(doc['title'])}</b>", kb([("Back to Manager", "gw_back_menu", "primary")]))
+        return
 
     if not message.text:
+        return
+
+    if uid in active_tickets:
+        target_id = active_tickets[uid]
+        try:
+            await message.copy(target_id)
+        except Exception:
+            await send_msg(uid, "Failed to send message. Target may have blocked the bot.")
         return
 
     if uid in user_states:
         state_data = user_states[uid]
         state = state_data.get("state")
 
-        if state == "wait_for_wd_amount":
+        if state == "wait_for_support":
+            ticket_id = f"#TKT{random.randint(1000, 9999)}"
+            pending_tickets[uid] = {"ticket_id": ticket_id, "reason": message.text}
+            del user_states[uid]
+            await send_msg(uid, TR[lang]["sup_sent"].format(tkt=ticket_id))
+
+            admin_text = (
+                f"{pe('🎟')} <b>New Support Ticket</b>\n\n"
+                f"<b>Ticket ID:</b> {ticket_id}\n"
+                f"<b>From User:</b> <a href='tg://user?id={uid}'>{safe_name}</a> (<code>{uid}</code>)\n"
+                f"<b>Reason:</b>\n<blockquote>{html.escape(message.text)}</blockquote>"
+            )
+            btns = kb(
+                [("Accept", f"tktacc_{uid}", "success"), ("Reject", f"tktrej_{uid}", "danger")]
+            )
+            admins = await admins_db.find().to_list(100)
+            admin_ids = set(a["user_id"] for a in admins)
+            admin_ids.add(OWNER_ID)
+
+            admin_ticket_msgs[uid] = {}
+            for aid in admin_ids:
+                try:
+                    sent = await send_msg(aid, admin_text, markup=btns)
+                    if sent:
+                        admin_ticket_msgs[uid][aid] = sent["message_id"]
+                except Exception:
+                    pass
+            return
+
+        elif state == "wait_for_wd_amount":
             try:
-                amt = float(message.text.replace("$", "").strip())
+                amount = float(message.text.replace("$", "").strip())
                 user = await get_or_create_user(uid, message.from_user)
+                bal = float(user.get("balance", 0.0))
                 conf = await get_config()
                 min_wd = float(conf.get("min_withdrawal", 20.0))
-                bal = float(user.get("balance", 0.0))
-                if amt < min_wd:
-                    return await send_msg(message.chat.id, f"{pe('❌')} Minimum withdrawal amount is {usd(min_wd)}.")
-                if amt > bal:
-                    return await send_msg(message.chat.id, f"{pe('❌')} Insufficient real balance! You have {usd(bal)}.")
-                state_data["amount"] = amt
-                state_data["state"] = "wait_for_address"
-                await send_msg(message.chat.id, TR[lang]["wd_addr"])
-            except ValueError:
-                await send_msg(message.chat.id, f"{pe('❌')} Invalid amount. Enter a valid number.")
+                if amount < min_wd or amount > bal:
+                    return await send_msg(uid, f"{pe('❌')} Invalid amount. Enter between ${min_wd:.2f} and ${bal:.2f}")
+                user_states[uid]["amount"] = amount
+                user_states[uid]["state"] = "wait_for_address"
+                await send_msg(uid, TR[lang]["wd_addr"])
+            except Exception:
+                await send_msg(uid, f"{pe('❌')} Please enter a valid numeric amount.")
             return
 
         elif state == "wait_for_address":
             addr = message.text.strip()
-            amt = state_data["amount"]
+            amount = state_data["amount"]
             del user_states[uid]
-            await users_db.update_one({"user_id": uid}, {"$inc": {"balance": -amt, "total_withdrawn": amt}})
-            await send_msg(message.chat.id, f"{pe('✅')} <b>Withdrawal Request Submitted!</b>\n\nAmount: {usd(amt)}\nAddress: <code>{html.escape(addr)}</code>\n\nPlease wait for admin approval.")
+            await users_db.update_one({"user_id": uid}, {"$inc": {"balance": -float(amount), "total_withdrawn": float(amount)}})
+            await send_msg(uid, f"{pe('✅')} Withdrawal request for ${amount:.2f} to <code>{html.escape(addr)}</code> submitted to admins.")
+
+            admin_text = (
+                f"{pe('💸')} <b>NEW WITHDRAWAL REQUEST</b>\n\n"
+                f"<b>User:</b> <a href='tg://user?id={uid}'>{safe_name}</a> (<code>{uid}</code>)\n"
+                f"<b>Amount:</b> ${float(amount):.2f}\n"
+                f"<b>Address:</b> <code>{html.escape(addr)}</code>"
+            )
+            btns = kb(
+                [("Done", f"wdone_{uid}_{amount}", "success"), ("Reject", f"wrej_{uid}_{amount}", "danger")]
+            )
             admins = await admins_db.find().to_list(100)
-            admin_ids = [a["user_id"] for a in admins] + [OWNER_ID]
-            wd_text = f"{pe('💸')} <b>New Withdrawal Request</b>\n\nUser: <a href='tg://user?id={uid}'>{safe_name}</a> (<code>{uid}</code>)\nAmount: <b>{usd(amt)}</b>\nAddress: <code>{html.escape(addr)}</code>"
-            wd_btns = kb([("Done", f"wdone_{uid}_{amt}", "success"), ("Reject", f"wrej_{uid}_{amt}", "danger")])
+            admin_ids = set(a["user_id"] for a in admins)
+            admin_ids.add(OWNER_ID)
+
             admin_withdraw_msgs[uid] = {}
-            for aid in set(admin_ids):
+            for aid in admin_ids:
                 try:
-                    sent = await send_msg(aid, wd_text, markup=wd_btns)
+                    sent = await send_msg(aid, admin_text, markup=btns)
                     if sent:
                         admin_withdraw_msgs[uid][aid] = sent["message_id"]
                 except Exception:
@@ -4212,90 +4255,67 @@ async def plain_text_handler(client: Client, message: Message):
         elif state == "wait_for_txlink":
             tx_link = message.text.strip()
             target_id = state_data["target_id"]
-            amt = state_data["amount"]
+            amount = float(state_data["amount"])
             del user_states[uid]
-            await send_msg(target_id, f"{pe('✅')} <b>Withdrawal Approved & Sent!</b>\n\nAmount: {amt}\nTransaction: {html.escape(tx_link)}")
-            await send_msg(message.chat.id, f"{pe('✅')} User <code>{target_id}</code> notified with transaction link.")
+            await send_msg(uid, f"{pe('✅')} Transaction recorded and sent to user.")
+            await send_msg(target_id, f"{pe('💸')} <b>Withdrawal Processed!</b>\nAmount: ${amount:.2f}\nTx Link: {html.escape(tx_link)}")
             return
 
         elif state == "wait_for_reason":
             reason = message.text.strip()
             target_id = state_data["target_id"]
-            amt = float(state_data["amount"])
+            amount = float(state_data["amount"])
             del user_states[uid]
-            await users_db.update_one({"user_id": target_id}, {"$inc": {"balance": amt, "total_withdrawn": -amt}})
+            await users_db.update_one({"user_id": target_id}, {"$inc": {"balance": amount, "total_withdrawn": -amount}})
             t_lang = await get_lang(target_id)
-            await send_msg(target_id, TR[t_lang]["wd_rej"].format(amount=usd(amt), reason=html.escape(reason)))
-            await send_msg(message.chat.id, f"{pe('✅')} Rejection sent to <code>{target_id}</code> and funds refunded.")
+            await send_msg(uid, f"{pe('✅')} Withdrawal rejected and funds refunded to user.")
+            await send_msg(target_id, TR[t_lang]["wd_rej"].format(amount=f"{amount:.2f}", reason=html.escape(reason)))
             return
-
-        elif state == "wait_for_support":
-            del user_states[uid]
-            tkt_num = f"#TKT{random.randint(1000, 9999)}"
-            pending_tickets[uid] = {"text": message.text, "tkt": tkt_num}
-            await send_msg(message.chat.id, TR[lang]["sup_sent"].format(tkt=tkt_num))
-            admins = await admins_db.find().to_list(100)
-            admin_ids = [a["user_id"] for a in admins] + [OWNER_ID]
-            tkt_text = f"{pe('🎟')} <b>New Support Ticket ({tkt_num})</b>\n\nFrom: <a href='tg://user?id={uid}'>{safe_name}</a> (<code>{uid}</code>)\n\n<b>Issue:</b>\n{html.escape(message.text)}"
-            tkt_btns = kb([("Accept", f"tktacc_{uid}", "success"), ("Reject", f"tktrej_{uid}", "danger")])
-            admin_ticket_msgs[uid] = {}
-            for aid in set(admin_ids):
-                try:
-                    sent = await send_msg(aid, tkt_text, markup=tkt_btns)
-                    if sent:
-                        admin_ticket_msgs[uid][aid] = sent["message_id"]
-                except Exception:
-                    pass
-            return
-
-    if uid in active_tickets:
-        partner_id = active_tickets[uid]
-        try:
-            await message.copy(partner_id)
-        except Exception:
-            await send_msg(message.chat.id, f"{pe('❌')} Failed to deliver message.")
-        return
 
     if not await pass_fsub(client, message):
         return
+    user = await get_or_create_user(uid, message.from_user)
+    welcome_body = TR[lang]["welcome"].format(tag=REQUIRED_USERNAME_TAG, link=user.get("bio_link", ""))
+    await send_msg(uid, welcome_body, markup=get_main_menu(lang), disable_web_page_preview=True, owner_id=uid)
 
 
-# ================= KEEP ALIVE WEB SERVER =================
-async def start_health_server():
-    async def health(request):
-        return web.Response(text="OK")
-    app_web = web.Application()
-    app_web.router.add_get("/", health)
-    app_web.router.add_get("/health", health)
-    runner = web.AppRunner(app_web)
-    await runner.setup()
+# ================= HEALTH CHECK SERVER & MAIN RUNNER =================
+async def health_handler(request):
+    return web.Response(text="OK", status=200)
+
+
+async def start_web_server():
     port = int(os.environ.get("PORT", 8080))
+    server = web.Application()
+    server.router.add_get("/", health_handler)
+    server.router.add_get("/health", health_handler)
+    runner = web.AppRunner(server)
+    await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
+    print(f"🌐 Keep-alive web server listening on port {port}...")
 
 
 async def main():
     global BOT_USERNAME
-    await start_health_server()
+    await start_web_server()
     await app.start()
-    me = await app.get_me()
-    BOT_USERNAME = me.username or ""
-
-    # Load banned users into cache
-    banned_docs = await users_db.find({"bot_banned": True}, {"user_id": 1}).to_list(length=None)
-    for bd in banned_docs:
-        bot_banned_cache.add(bd["user_id"])
-
-    # Resume any active giveaways
-    active_gws = await giveaways_db.find({"status": "active"}).to_list(length=None)
-    for gw in active_gws:
-        asyncio.create_task(giveaway_countdown_task(gw["_id"]))
+    try:
+        me = await app.get_me()
+        BOT_USERNAME = me.username or ""
+        print(f"🤖 Bot started as @{BOT_USERNAME} (id={me.id})")
+    except Exception as e:
+        print(f"⚠️ get_me warning: {e}")
 
     asyncio.create_task(background_verification_check())
     asyncio.create_task(sweeper())
     asyncio.create_task(weekly_race_timer_task())
     asyncio.create_task(weekly_refferal_race_timer_task())
-    print(f"🚀 Bot @{BOT_USERNAME} started successfully!")
+
+    active_gws = await giveaways_db.find({"status": "active"}).to_list(length=None)
+    for gw in active_gws:
+        asyncio.create_task(giveaway_countdown_task(gw["_id"]))
+
     await idle()
     await app.stop()
     if HTTP_SESSION and not HTTP_SESSION.closed:
@@ -4303,4 +4323,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(main())
+    app.run(main())
