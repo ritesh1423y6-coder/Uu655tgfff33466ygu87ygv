@@ -3910,25 +3910,25 @@ async def cb_router(client: Client, call: CallbackQuery):
             await users_db.update_one({"user_id": target_uid}, {"$set": {"ever_joined_group": True}}, upsert=True)
 
         aff_note = (
-            f"\n{pe('⛓️')} Aap referrer (<code>{inviter_id}</code>) ke affiliate mein add ho gaye hain."
+            f"\n{pe('⛓️')} You have been added to the affiliate list of the referrer (<code>{inviter_id}</code>)."
             if credited and inviter_id
             else ""
         )
         await edit_msg(
             chat_id,
             msg_id,
-            f"{pe('✅')} <b>Confirm!</b> Aapki verification poori ho gayi hai aur ab aap message bhej sakte hain.{aff_note}",
+            f"{pe('✅')} <b>Confirmed!</b> Your verification is complete and you can now send messages.{aff_note}",
             markup=None
         )
         if not is_private:
             try:
                 await send_msg(
                     target_uid,
-                    f"{pe('✅')} <b>Confirm!</b> Aapki verification poori ho gayi hai aur ab aap chat mein message bhej sakte hain.{aff_note}"
+                    f"{pe('✅')} <b>Confirmed!</b> Your verification is complete and you can now send messages in the chat.{aff_note}"
                 )
             except Exception:
                 pass
-        return await answer_cb(cb_id, "Confirm ho gaya! Ab aap message bhej sakte hain.", show_alert=False)
+        return await answer_cb(cb_id, "Confirmed! You can now send messages.", show_alert=False)
 
     if data.startswith("gw_rev_"):
         if not await is_admin(uid):
