@@ -3521,8 +3521,8 @@ async def handle_join_request(client: Client, request: ChatJoinRequest):
 
     u_mention = mention(user_id, user.first_name)
     group_prompt_text = (
-        f"{pe('🛡')} {u_mention}, aapki join request accept ho gayi hai.\n"
-        f"Abhi aap group mein message nahi bhej sakte. Message bhejne ke liye neeche button dabayein."
+        f"{pe('🛡')} {u_mention}, Your join request has been accepted.\n"
+        f"You cannot send messages to the group right now. Click the button below to send a message."
     )
     group_prompt_kb = kb([("Confirm & Unmute", f"req_confirm_{user_id}", "success", "✅")])
     await send_msg(chat_id, group_prompt_text, markup=group_prompt_kb, owner_id=user_id)
